@@ -15,6 +15,8 @@ const DT = 1 / 120, STEP_MS = 1000 / 120;
 const SERVE = 0.6, MIN_SPEED = 0.3, MAX_SPEED = 2.6;
 const GLIDE = 0.2;               // share of speed lost per second: it's an air table
 const HIT = 0.9;                 // how much of a hit the puck keeps (1 = perfectly bouncy)
+const SWING_MAX = 2.5;           // a mallet never hits harder than this (table units a second)
+const SWING_SMOOTH = 0.12;       // share of each step's movement that counts toward the swing
 const BALL_EVERY_MS = 8000, MAX_PUCKS = 6, RESPAWN_MS = 1000;
 const HISTORY = 4;               // mallet samples kept (~130ms at 33ms ticks)
 const MIN_INWARD = 0.25;         // a wall bounce always sends a puck at least this much back in
@@ -109,7 +111,12 @@ export class Hockey implements ServerGame {
       if (s.out) continue;
       const before = s.m;
       s.m = approach(s.m, s.target, DT, s.bot ? BOT_SPEED * (0.45 + 0.45 * s.bot.skill) : HOCKEY.malletSpeed);
-      s.vel = [(s.m[0] - before[0]) / DT, (s.m[1] - before[1]) / DT];
+      // The swing is the hand's speed, not the mallet's: positions arrive in 33ms
+      // jumps the mallet covers in a blink, so smooth over ~70ms and cap it.
+      const vx = s.vel[0] + ((s.m[0] - before[0]) / DT - s.vel[0]) * SWING_SMOOTH;
+      const vy = s.vel[1] + ((s.m[1] - before[1]) / DT - s.vel[1]) * SWING_SMOOTH;
+      const sp = len(vx, vy), k = sp > SWING_MAX ? SWING_MAX / sp : 1;
+      s.vel = [vx * k, vy * k];
     }
     for (const b of this.pucks) {
       // Air table: barely any friction, and a puck never quite stops.
