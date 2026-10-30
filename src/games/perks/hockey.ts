@@ -7,7 +7,7 @@
 //
 // The puck runs on setInterval, not requestAnimationFrame, so it keeps going
 // (briefly) in a background tab; the server takes over if the phone goes quiet.
-import { HOCKEY, clampMallet, homeOf, moveMallet, sideOf, stepPuck, type HockeyFrame, type HockeyView, type Mallet, type Puck } from '../../../shared/hockey.ts';
+import { GOAL0, GOAL1, HOCKEY, clampMallet, homeOf, moveMallet, sideOf, stepPuck, type HockeyFrame, type HockeyView, type Mallet, type Puck } from '../../../shared/hockey.ts';
 import { chip, countdown, esc, timer, tickTimers, type App, type GameClient } from '../../app.ts';
 
 const RIM = 0.06;                // drawn rail, table units
@@ -16,8 +16,8 @@ const KEY_SPEED = 1.8;
 const SIM_MS = 8;
 const DELAY_MS = 80;             // what I don't run myself is drawn this far in the past, smoothly
 const SETTLE_S = 0.07;           // a correction to the puck I'm predicting fades in over this long
-// Goals: the last half second before the puck went in, replayed at a third of the speed.
-const REPLAY_MS = 1600, SLOW = 3, REPLAY_SPAN_MS = 500;
+// Goals: the puck slides on into the net in slow motion, under a flash and GOAL!.
+const REPLAY_MS = 1600, SLIDE_MS = 1000;
 
 type P = Puck & { at: number; n: number };
 const rowOf = (r: number[]) => ({ m: [{ x: r[0], y: r[1] }, { x: r[2], y: r[3] }], p: { x: r[4], y: r[5], vx: r[6], vy: r[7], at: r[8], n: r[9] } as P });
@@ -86,9 +86,9 @@ export const hockeyGame = (): GameClient => {
   const opp: Mallet = { x: 0, y: 0, vx: 0, vy: 0 };
   let oppAt = 0;
   let off = { x: 0, y: 0 }, lastDraw = 0;
-  // The big table's recent puck path, and the goal replay playing from it.
-  let trail: Array<{ t: number; x: number; y: number }> = [], trailOf = '';
-  let replay: { key: string; start: number; trail: typeof trail; color: string; name: string } | null = null;
+  // Where the big table's puck was last drawn, and the goal slow-mo playing from there.
+  let lastLive: { x: number; y: number } | null = null;
+  let replay: { key: string; start: number; from: { x: number; y: number }; to: { x: number; y: number }; color: string; name: string } | null = null;
   let myGoalN = -1;              // a goal my phone saw first (I had the puck), before the server says so
   const keys = new Set<string>();
   // Watching.
@@ -179,6 +179,7 @@ export const hockeyGame = (): GameClient => {
     const mallets = s === 0 ? [mine, opp] : [opp, mine];
     while (simAt + HOCKEY.dt * 1000 <= now) {
       simAt += HOCKEY.dt * 1000;
+      puck.at = simAt;
       const g = stepPuck(puck, mallets);
       if (g === s) { owner = false; myGoalN = puck.n; app.net.game({ k: 'goal', n: puck.n }); return; }
       if (sideOf(puck.y) !== s) { owner = false; sendPuck(now); return; }
@@ -211,25 +212,19 @@ export const hockeyGame = (): GameClient => {
   // ── drawing ──
   // The puck to draw on the big table: live, or the goal replay while one plays.
   function bigPuck(table: number, n: number, conceded: number, live: Puck | null, ids: string[]): Puck | null {
-    const t = performance.now(), key = `${gv()!.stage}:${table}`;
-    if (trailOf !== key) { trailOf = key; trail = []; }
-    if (conceded >= 0 && replay?.key !== `${key}:${n}`) {
+    const t = performance.now(), key = `${gv()!.stage}:${table}:${n}`;
+    if (conceded >= 0 && replay?.key !== key) {
+      // Slide on from where it was last drawn into the back of the net, slowly.
+      const from = lastLive ?? { x: HOCKEY.W / 2, y: HOCKEY.L / 2 }, r = HOCKEY.puckR;
+      const to = { x: Math.max(GOAL0 + r, Math.min(GOAL1 - r, from.x)), y: conceded === 0 ? HOCKEY.L + 0.04 : -0.04 };
       const scorer = ids[1 - conceded];
-      replay = { key: `${key}:${n}`, start: t, trail: [...trail], color: pair(ids)[1 - conceded], name: app.player(scorer)?.name ?? '' };
+      replay = { key, start: t, from, to, color: pair(ids)[1 - conceded], name: app.player(scorer)?.name ?? '' };
     }
-    if (replay && replay.key === `${key}:${n}` && t - replay.start < REPLAY_MS) {
-      const tr = replay.trail;
-      if (!tr.length) return null;
-      const end = tr[tr.length - 1].t, at = Math.min(end, Math.max(tr[0].t, end - REPLAY_SPAN_MS) + (t - replay.start) / SLOW);
-      const j = Math.max(1, tr.findIndex(q => q.t >= at));
-      const a = tr[j - 1], b = tr[Math.min(j, tr.length - 1)], k = b.t > a.t ? (at - a.t) / (b.t - a.t) : 1;
-      return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, vx: 0, vy: 0 };
+    if (conceded >= 0 && replay) {
+      const k = Math.min(1, (t - replay.start) / SLIDE_MS), e = 1 - (1 - k) ** 3;
+      return { x: replay.from.x + (replay.to.x - replay.from.x) * e, y: replay.from.y + (replay.to.y - replay.from.y) * e, vx: 0, vy: 0 };
     }
-    if (conceded >= 0) return null;   // in the net, waiting for the puck drop
-    if (live) {
-      trail.push({ t, x: live.x, y: live.y });
-      while (trail.length && t - trail[0].t > 900) trail.shift();
-    }
+    lastLive = live ? { x: live.x, y: live.y } : lastLive;
     return live;
   }
 
@@ -272,6 +267,7 @@ export const hockeyGame = (): GameClient => {
       const conceded = raw[10] >= 0 ? raw[10] : myGoalN === puck?.n ? s : -1;
       const shown = bigPuck(v.me.t, puck?.n ?? 0, conceded, p && { ...p, x: p.x + off.x, y: p.y + off.y }, tb.ids);
       drawTable(big, ms, shown, pair(tb.ids), s === 1, s);
+      (window as any).devPuckLog?.push([performance.now(), shown?.x ?? NaN, shown?.y ?? NaN, owner ? 1 : 0, puck?.n ?? 0, conceded, off.x, off.y, p?.x ?? NaN, p?.y ?? NaN]);
       goalFx();
     } else if (!big.hidden) {
       const i = v.tables.length === 1 ? 0 : focus, row = interp(i, now - DELAY_MS);

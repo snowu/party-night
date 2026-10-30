@@ -36,6 +36,8 @@ Each round is a random pick from the enabled games, with no repeats until they r
 | Air Hockey Cup | A knockout tournament of quick 1v1 duels on a proper table, every match of a bracket round at once: first to 3, or most goals in 35s, then golden goal, then a coin. An odd one out gets a bye (never twice if it can be helped). Knocked-out players watch the other tables. |
 | Trick Shot | One shot each on the same pool table, three tables (bumpers, trampoline rails, a bowling ball…). Balls potted score; sinking the white costs. Every shot is replayed side by side. |
 
+**A slow network on localhost:** add `&lag=80&jitter=40` to any URL to delay every message each way. `node tests/feel.mjs` plays air hockey that way and counts puck teleports.
+
 **Testing one game:** open `?try=<id>` (e.g. `?try=hockey`, `?try=pool`) for a fresh room with bots that goes straight into that game, round after round; reload for a new room. In a lobby, the host can hover a game and hit **▶ Try** for the same thing. Ids are in `shared/catalog.ts`.
 
 The host is the earliest-joined human still connected. They can add bots, pick the number of rounds and switch games on or off. Share rooms with `?room=CODE`. Open `?room=CODE&tv=1` for the spectator screen to share on the call: live standings, and a camera that follows the race leader.

@@ -17,8 +17,23 @@ export interface NetHandlers {
   status(up: boolean, why?: string): void;
 }
 
+// Dev only: ?lag=80&jitter=40 delays every message each way (in order, like TCP),
+// to feel a real network on localhost.
+const qs = typeof location === 'undefined' ? null : new URLSearchParams(location.search);
+const LAG = Number(qs?.get('lag')) || 0, JITTER = Number(qs?.get('jitter')) || 0;
+function delayed() {
+  let last = 0;
+  return (f: () => void) => {
+    if (!LAG && !JITTER) return f();
+    last = Math.max(last, performance.now() + LAG + Math.random() * JITTER);
+    setTimeout(f, last - performance.now());
+  };
+}
+
 export class Net {
   ws: WebSocket | null = null;
+  private inbound = delayed();
+  private outbound = delayed();
   offset = 0;                        // server clock − local clock
   private synced = false;
   private closed = false;
@@ -31,7 +46,7 @@ export class Net {
     const ws = new WebSocket(`${serverUrl()}/ws/${this.code}?${this.query}`);
     this.ws = ws;
     ws.onopen = () => this.h.status(true);
-    ws.onmessage = e => {
+    ws.onmessage = e => this.inbound(() => {
       const m = JSON.parse(e.data);
       if (m.t === 'state') {
         // Smooth the skew: one late packet shouldn't jolt every countdown.
@@ -42,7 +57,7 @@ export class Net {
       } else if (m.t === 'bc') this.h.bc(m.from, m.e, m.p);
       else if (m.t === 'event') this.h.event(m.text);
       else this.h.raw(m);
-    };
+    });
     ws.onclose = e => {
       if (this.closed) return;
       if (e.code >= 4000 && e.code < 4100) { this.h.status(false, e.reason || 'closed'); return; }
@@ -52,7 +67,8 @@ export class Net {
   }
 
   send(m: unknown) {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(m));
+    const data = JSON.stringify(m);
+    this.outbound(() => { if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(data); });
   }
   game(m: object) { this.send({ t: 'g', ...m }); }
   host(op: string, extra: object = {}) { this.send({ t: 'host', op, ...extra }); }
