@@ -10,7 +10,7 @@ const MAX_SPEED = 2.6;   // HOCKEY.maxPuck
 const b = await chromium.launch({ executablePath: process.env.CHROME });
 const p = await (await b.newContext({ viewport: { width: 900, height: 900 } })).newPage();
 const errs = []; p.on('pageerror', e => errs.push(e.message));
-await p.goto(`${process.env.BASE ?? 'http://localhost:8004'}/?try=hockey&lag=${LAG}&jitter=${JIT}`);
+await p.goto(`${process.env.BASE ?? 'http://localhost:8004'}/?dev=1&try=hockey&lag=${LAG}&jitter=${JIT}`);
 await p.waitForSelector('.hk-big:not([hidden])', { timeout: 15000 });
 await p.waitForFunction(() => { const v = window.devState()?.gv; return v?.phase === 'play' && window.devApp().now() > v.startAt; }, null, { timeout: 15000 });
 await p.evaluate(() => { window.devPuckLog = []; });
