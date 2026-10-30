@@ -39,6 +39,7 @@ export class RoomCore {
   settings: Settings = { rounds: 8, games: [...DEFAULT_GAMES] };
   playlist: string[] = [];        // games played (or playing) tonight, in order
   totalRounds = 0;
+  birdRound = 0;                  // the night's one bird round (never round 1)
   round = 0;
   gameId = '';
   game: ServerGame | null = null;
@@ -170,6 +171,7 @@ export class RoomCore {
         this.history = [];
         this.playlist = [];
         this.totalRounds = this.settings.rounds;
+        this.birdRound = 2 + Math.floor(this.rand() * (this.totalRounds - 1));
         this.round = 0;
         this.advance(now);
         break;
@@ -186,32 +188,31 @@ export class RoomCore {
       case 'again':
         if (this.phase !== 'podium') return;
         for (const p of this.players.values()) p.points = 0;
-        Object.assign(this, { phase: 'lobby', round: 0, totalRounds: 0, playlist: [], history: [], outcome: null, nightAwards: [], game: null, gameId: '', phaseEndsAt: 0 });
+        Object.assign(this, { phase: 'lobby', round: 0, totalRounds: 0, birdRound: 0, playlist: [], history: [], outcome: null, nightAwards: [], game: null, gameId: '', phaseEndsAt: 0 });
         break;
     }
     this.dirty = true;
   }
 
   // ── rotation ───────────────────────────────────────────────────────────────
-  // Picked one round at a time, from who's actually here: no game twice in a night
-  // until every eligible one has been played, and bird rounds spread out to their
-  // share of the enabled games (about one in three), never two in a row, with
-  // the night opening on one.
+  // Picked one round at a time, from who's actually here. The four bird games count
+  // as one mode: a night gets one bird round, never the opener (birdRound is drawn
+  // at the start). No game twice until every eligible one of its kind has been
+  // played; a long night repeats social games rather than adding a second race.
   pickNext(): string {
-    const kind = (g: string) => gameById(g)?.kind;
-    const enabled = this.settings.games.filter(g => gameById(g));
-    const ok = enabled.filter(g => this.eligible(g));
+    const bird = (g: string) => gameById(g)?.kind === 'bird';
+    const ok = this.settings.games.filter(g => this.eligible(g));
     const pool = ok.length ? ok : ['quiz'];
     const last = this.playlist[this.playlist.length - 1];
-    let fresh = pool.filter(g => !this.playlist.includes(g));
-    if (!fresh.length) fresh = pool.filter(g => g !== last);
-    if (!fresh.length) fresh = pool;
-    const share = enabled.filter(g => kind(g) === 'bird').length / Math.max(1, enabled.length);
-    const k = this.playlist.length + 1;
-    const birds = this.playlist.filter(g => kind(g) === 'bird').length;
-    const wantBird = kind(last ?? '') !== 'bird' && birds < Math.round((k - 0.5) * share + 0.5);
-    const lane = fresh.filter(g => (kind(g) === 'bird') === wantBird);
-    return this.shuffled(lane.length ? lane : fresh)[0];
+    const wantBird = this.round === this.birdRound;
+    const plays = (g: string) => this.playlist.filter(x => x === g).length;
+    const rest = pool.filter(g => g !== last);
+    const fewest = Math.min(...rest.map(plays));
+    // Unplayed first, then the least-played (never the one just played).
+    const tiers = [pool.filter(g => !plays(g)), rest.filter(g => plays(g) === fewest), rest, pool];
+    // A one-kind night (all birds, say) plays what it has.
+    const lane = tiers.map(xs => xs.filter(g => bird(g) === wantBird)).find(xs => xs.length) ?? tiers.find(xs => xs.length)!;
+    return this.shuffled(lane)[0];
   }
 
   private shuffled<T>(xs: T[]): T[] {

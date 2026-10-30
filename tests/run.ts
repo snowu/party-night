@@ -122,11 +122,13 @@ for (const [label, games, rounds] of [
   check(`${label}: plays every round`, room.history.length === rounds, `${room.history.length}`);
   const played = room.history.map(o => o.game);
   const kind = (g: string) => CATALOG.find(c => c.id === g)!.kind;
-  check(`${label}: no game twice in a night`, new Set(played).size === Math.min(played.length, games.length), played.join(','));
+  const socials = played.filter(g => kind(g) === 'social');
+  const distinct = Math.min(socials.length, games.filter(g => kind(g) === 'social').length);
+  check(`${label}: no game repeats until its kind runs out, never back to back`,
+    new Set(socials.slice(0, distinct)).size === distinct && played.every((g, i) => g !== played[i - 1]), played.join(','));
   if (label === 'mixed night') {
-    check(`${label}: opens on a bird round, never two in a row`, kind(played[0]) === 'bird' && played.every((g, i) => i === 0 || kind(g) !== 'bird' || kind(played[i - 1]) !== 'bird'), played.join(','));
     const birds = played.filter(g => kind(g) === 'bird').length;
-    check(`${label}: about one bird round in three`, birds >= 3 && birds <= 5, `${birds} of ${played.length}`);
+    check(`${label}: one bird round, not the opener`, birds === 1 && kind(played[0]) !== 'bird', played.join(','));
   }
   const sums = new Map<string, number>();
   for (const o of room.history) for (const x of o.ranking) sums.set(x.id, (sums.get(x.id) ?? 0) + x.gained);
