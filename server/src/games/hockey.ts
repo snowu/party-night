@@ -19,7 +19,9 @@ const SWING_MAX = 2.5;           // a mallet never hits harder than this (table 
 const SWING_SMOOTH = 0.12;       // share of each step's movement that counts toward the swing
 const BALL_EVERY_MS = 8000, MAX_PUCKS = 6, RESPAWN_MS = 1000;
 const HISTORY = 4;               // mallet samples kept (~130ms at 33ms ticks)
-const MIN_INWARD = 0.25;         // a wall bounce always sends a puck at least this much back in
+const RAIL = 0.9;                // share of speed a puck keeps off the rail
+const MIN_INWARD = 0.05;         // …and at least this much of it heads back in, so nothing hugs the rim forever
+const SQUIRT = 1.2;              // top speed of a puck squeezed out between a mallet and the rail
 const BOT_SPEED = 3.2;           // bots' mallets are slower than a hand, by design
 const KMH = 40;                  // table units a second → km/h, for the Slapshot award
 
@@ -173,8 +175,9 @@ export class Hockey implements ServerGame {
     const mouth = !seat.out && a >= sl.g0 && a <= sl.g1;
     const outward = b.vx * nx + b.vy * ny > 0;
     if (!mouth) {
-      if (outward) this.bounce(b, nx, ny, seat.out ? 1.12 : 1);
+      if (outward) this.bounce(b, nx, ny, seat.out ? 1.12 : RAIL);
       b.x = nx * (1 - b.r); b.y = ny * (1 - b.r);
+      this.squeeze(b, nx, ny);
       return;
     }
     if (!b.miss && outward) {
@@ -185,14 +188,38 @@ export class Hockey implements ServerGame {
     if (d - b.r > 1) this.goal(b, seat, now);
   }
 
+  // A mirror bounce off the rail, a little slower. Only a puck skimming the rim
+  // almost flat gets nudged back in, so it can't circle the table forever.
   bounce(b: Puck, nx: number, ny: number, e: number) {
-    const sp = Math.min(MAX_SPEED, len(b.vx, b.vy) * e);
     const vn = b.vx * nx + b.vy * ny;
-    let tx = b.vx - vn * nx, ty = b.vy - vn * ny;
-    const inward = Math.max(MIN_INWARD * sp, Math.abs(vn) * e);
-    const tl = len(tx, ty) || 1, keep = Math.sqrt(Math.max(0, sp * sp - inward * inward));
-    tx = (tx / tl) * keep; ty = (ty / tl) * keep;
-    b.vx = tx - nx * inward; b.vy = ty - ny * inward;
+    b.vx = (b.vx - 2 * vn * nx) * e; b.vy = (b.vy - 2 * vn * ny) * e;
+    const sp = len(b.vx, b.vy), inward = -(b.vx * nx + b.vy * ny);
+    if (inward < MIN_INWARD * sp) {
+      const tx = b.vx + inward * nx, ty = b.vy + inward * ny, tl = len(tx, ty) || 1;
+      const keep = Math.sqrt(sp * sp * (1 - MIN_INWARD * MIN_INWARD));
+      b.vx = (tx / tl) * keep - nx * MIN_INWARD * sp; b.vy = (ty / tl) * keep - ny * MIN_INWARD * sp;
+    }
+    const k = Math.min(1, MAX_SPEED / (sp || 1));
+    b.vx *= k; b.vy *= k;
+  }
+
+  // A puck pinned between a mallet and the rail squirts out sideways along the
+  // rail, instead of being bounced back and forth between them.
+  squeeze(b: Puck, nx: number, ny: number) {
+    const min = b.r + this.mr;
+    for (const s of this.seats) {
+      if (s.out || len(b.x - s.m[0], b.y - s.m[1]) >= min) continue;
+      const tx = -ny, ty = nx, side = (b.x - s.m[0]) * tx + (b.y - s.m[1]) * ty >= 0 ? 1 : -1;
+      const R = 1 - b.r;
+      let a = Math.atan2(b.y, b.x);
+      for (let k = 0; k < 80 && len(b.x - s.m[0], b.y - s.m[1]) < min; k++) {
+        a += side * 0.01;
+        b.x = Math.cos(a) * R; b.y = Math.sin(a) * R;
+      }
+      const sp = Math.min(SQUIRT, Math.max(0.5, len(b.vx, b.vy)));
+      b.vx = -Math.sin(a) * side * sp; b.vy = Math.cos(a) * side * sp;
+      b.last = s.id;
+    }
   }
 
   goal(b: Puck, seat: Seat, now: number) {
