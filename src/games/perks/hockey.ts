@@ -14,6 +14,10 @@ const RIM = 0.06;                // drawn rail, table units
 const MY_SPEED = 12;             // my mallet chases the pointer this fast (units/s)
 const KEY_SPEED = 1.8;
 const SIM_MS = 8;
+const DELAY_MS = 80;             // what I don't run myself is drawn this far in the past, smoothly
+const SETTLE_S = 0.07;           // a correction to the puck I'm predicting fades in over this long
+// Goals: the last half second before the puck went in, replayed at a third of the speed.
+const REPLAY_MS = 1600, SLOW = 3, REPLAY_SPAN_MS = 500;
 
 type P = Puck & { at: number; n: number };
 const rowOf = (r: number[]) => ({ m: [{ x: r[0], y: r[1] }, { x: r[2], y: r[3] }], p: { x: r[4], y: r[5], vx: r[6], vy: r[7], at: r[8], n: r[9] } as P });
@@ -75,11 +79,17 @@ export const hockeyGame = (): GameClient => {
   let root: HTMLElement, app: App, big: HTMLCanvasElement;
   let raf = 0, sim = 0, lastSim = 0, lastSentM = 0, lastSentP = 0, sentM = '';
   const frames: number[][] = [];
+  const buf: HockeyFrame[] = [];   // recent snapshots, for drawing in the past
   // My table.
   let puck: P | null = null, owner = false, simAt = 0, myLastAt = 0;
   let mine: Mallet | null = null, target: [number, number] | null = null;
   const opp: Mallet = { x: 0, y: 0, vx: 0, vy: 0 };
   let oppAt = 0;
+  let off = { x: 0, y: 0 }, lastDraw = 0;
+  // The big table's recent puck path, and the goal replay playing from it.
+  let trail: Array<{ t: number; x: number; y: number }> = [], trailOf = '';
+  let replay: { key: string; start: number; trail: typeof trail; color: string; name: string } | null = null;
+  let myGoalN = -1;              // a goal my phone saw first (I had the puck), before the server says so
   const keys = new Set<string>();
   // Watching.
   let focus = -1, gridKey = '';
@@ -93,24 +103,49 @@ export const hockeyGame = (): GameClient => {
     if (el) { el.innerHTML = html; tickTimers(app.now()); }
   };
   const color = (id: string) => app.player(id)?.color ?? '#888';
+  // A table's two colours, never the same twice: the top player gets a contrast if they clash.
+  const pair = (ids: string[]) => { const c = ids.map(color); return c[0] === c[1] ? [c[0], c[0] === '#2de2e6' ? '#ff3d9a' : '#2de2e6'] : c; };
   const live = () => { const v = gv(); return !!v && v.phase === 'play' && !!v.me && app.now() >= v.startAt; };
 
   // ── my table: mallet, puck, hand-offs ──
+  // Where I think my table's puck is right now: exact while I run it, else
+  // predicted from the last state.
+  const predicted = (now: number): Puck | null => (puck ? (owner ? puck : ahead(puck, now)) : null);
+
   function onFrame(f: HockeyFrame) {
     frames.length = 0; frames.push(...f.T);
+    buf.push(f);
+    if (buf.length > 15) buf.shift();
     const v = gv();
     if (!v?.me || !f.T[v.me.t]) return;
-    const { m, p } = rowOf(f.T[v.me.t]), s = v.me.s;
+    const { m, p } = rowOf(f.T[v.me.t]), s = v.me.s, now = app.now();
     const o = m[1 - s];
     moveMallet(opp, o.x, o.y, oppAt ? (f.at - oppAt) / 1000 : 0, 0.5);
     oppAt = f.at;
+    const was = predicted(now);
     if (!puck || p.n !== puck.n) {
-      // Puck down (start, or after a goal).
-      puck = { ...p }; owner = sideOf(p.y) === s; simAt = Math.max(p.at, app.now() - 200); myLastAt = 0;
-    } else if (!owner && p.at >= myLastAt) {
-      puck = { ...p };
-      if (sideOf(p.y) === s) { owner = true; simAt = Math.max(p.at, app.now() - 200); }
+      // Puck down (start, or after a goal): jump straight there.
+      puck = { ...p }; owner = sideOf(p.y) === s; simAt = Math.max(p.at, now - 200); myLastAt = 0;
+      off = { x: 0, y: 0 };
+      return;
     }
+    if (!owner && p.at >= myLastAt) {
+      puck = { ...p };
+      if (sideOf(p.y) === s) { owner = true; simAt = Math.max(p.at, now - 200); }
+      // Don't snap to the correction: keep drawing where it was and let the gap fade.
+      const is = predicted(now);
+      if (was && is) off = { x: off.x + was.x - is.x, y: off.y + was.y - is.y };
+    }
+  }
+
+  // Snapshots around time `at`, blended: a table I'm only watching.
+  function interp(i: number, at: number): number[] | null {
+    let a: HockeyFrame | null = null, b: HockeyFrame | null = null;
+    for (const f of buf) { if (!f.T[i]) continue; if (f.at <= at) a = f; else if (!b) b = f; }
+    if (!a || !b) return (a ?? b)?.T[i] ?? null;
+    const ra = a.T[i], rb = b.T[i], k = (at - a.at) / (b.at - a.at || 1);
+    if (ra[9] !== rb[9]) return rb;   // a goal in between: no blending across it
+    return rb.map((x, j) => (j < 8 ? ra[j] + (x - ra[j]) * k : x));
   }
 
   function sendPuck(now: number) {
@@ -145,7 +180,7 @@ export const hockeyGame = (): GameClient => {
     while (simAt + HOCKEY.dt * 1000 <= now) {
       simAt += HOCKEY.dt * 1000;
       const g = stepPuck(puck, mallets);
-      if (g === s) { owner = false; app.net.game({ k: 'goal', n: puck.n }); return; }
+      if (g === s) { owner = false; myGoalN = puck.n; app.net.game({ k: 'goal', n: puck.n }); return; }
       if (sideOf(puck.y) !== s) { owner = false; sendPuck(now); return; }
     }
     if (now - lastSentP >= HOCKEY.sendMs) sendPuck(now);
@@ -174,27 +209,82 @@ export const hockeyGame = (): GameClient => {
   };
 
   // ── drawing ──
+  // The puck to draw on the big table: live, or the goal replay while one plays.
+  function bigPuck(table: number, n: number, conceded: number, live: Puck | null, ids: string[]): Puck | null {
+    const t = performance.now(), key = `${gv()!.stage}:${table}`;
+    if (trailOf !== key) { trailOf = key; trail = []; }
+    if (conceded >= 0 && replay?.key !== `${key}:${n}`) {
+      const scorer = ids[1 - conceded];
+      replay = { key: `${key}:${n}`, start: t, trail: [...trail], color: pair(ids)[1 - conceded], name: app.player(scorer)?.name ?? '' };
+    }
+    if (replay && replay.key === `${key}:${n}` && t - replay.start < REPLAY_MS) {
+      const tr = replay.trail;
+      if (!tr.length) return null;
+      const end = tr[tr.length - 1].t, at = Math.min(end, Math.max(tr[0].t, end - REPLAY_SPAN_MS) + (t - replay.start) / SLOW);
+      const j = Math.max(1, tr.findIndex(q => q.t >= at));
+      const a = tr[j - 1], b = tr[Math.min(j, tr.length - 1)], k = b.t > a.t ? (at - a.t) / (b.t - a.t) : 1;
+      return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, vx: 0, vy: 0 };
+    }
+    if (conceded >= 0) return null;   // in the net, waiting for the puck drop
+    if (live) {
+      trail.push({ t, x: live.x, y: live.y });
+      while (trail.length && t - trail[0].t > 900) trail.shift();
+    }
+    return live;
+  }
+
+  // Flash, shake and GOAL! over the big table while a replay plays.
+  function goalFx() {
+    const e = replay ? performance.now() - replay.start : Infinity;
+    big.style.transform = e < 350 ? `translate(${(Math.random() - 0.5) * 14 * (1 - e / 350)}px, ${(Math.random() - 0.5) * 14 * (1 - e / 350)}px)` : '';
+    if (!replay || e >= REPLAY_MS) return;
+    const g = big.getContext('2d')!, W = big.width, H = big.height;
+    g.save();
+    g.fillStyle = 'rgba(16, 19, 31, 0.18)'; g.fillRect(0, 0, W, H);   // slow-mo tint
+    if (e < 350) { g.globalAlpha = 0.5 * (1 - e / 350); g.fillStyle = replay.color; g.fillRect(0, 0, W, H); }
+    g.globalAlpha = e > REPLAY_MS - 300 ? (REPLAY_MS - e) / 300 : 1;
+    const pop = 1 + 0.7 * Math.max(0, 1 - e / 220);
+    g.translate(W / 2, H * 0.42); g.scale(pop, pop); g.rotate(-0.08);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = `${Math.round(W * 0.2)}px Bungee, sans-serif`;
+    g.lineWidth = W * 0.02; g.strokeStyle = '#10131f'; g.strokeText('GOAL!', 0, 0);
+    g.fillStyle = replay.color; g.fillText('GOAL!', 0, 0);
+    g.font = `700 ${Math.round(W * 0.06)}px Inter, sans-serif`;
+    g.lineWidth = W * 0.012; g.strokeText(replay.name, 0, W * 0.15);
+    g.fillStyle = '#fff'; g.fillText(replay.name, 0, W * 0.15);
+    g.restore();
+  }
+
   function draw() {
     raf = requestAnimationFrame(draw);
     const v = gv();
     if (!v) return;
-    const now = app.now();
+    const now = app.now(), t = performance.now();
+    const fade = Math.exp(-Math.min(0.1, (t - (lastDraw || t)) / 1000) / SETTLE_S);
+    lastDraw = t;
+    off = { x: off.x * fade, y: off.y * fade };
     if (v.me && frames[v.me.t]) {
-      const t = v.tables[v.me.t], s = v.me.s;
-      const ms = [0, 1].map(i => (i === s && mine ? mine : opp));
-      const p = puck ? (owner ? puck : ahead(puck, now)) : null;
-      drawTable(big, ms, p, t.ids.map(color), s === 1, s);
+      const tb = v.tables[v.me.t], s = v.me.s;
+      const late = interp(v.me.t, now - DELAY_MS);
+      const them = late ? rowOf(late).m[1 - s] : opp;
+      const ms = [0, 1].map(i => (i === s && mine ? mine : them));
+      const p = predicted(now), raw = frames[v.me.t];
+      const conceded = raw[10] >= 0 ? raw[10] : myGoalN === puck?.n ? s : -1;
+      const shown = bigPuck(v.me.t, puck?.n ?? 0, conceded, p && { ...p, x: p.x + off.x, y: p.y + off.y }, tb.ids);
+      drawTable(big, ms, shown, pair(tb.ids), s === 1, s);
+      goalFx();
     } else if (!big.hidden) {
-      const i = v.tables.length === 1 ? 0 : focus;
-      if (!frames[i]) return;
-      const { m, p } = rowOf(frames[i]);
-      drawTable(big, m, v.tables[i].winner >= 0 ? null : ahead(p, now), v.tables[i].ids.map(color), false);
-    }
-    root.querySelectorAll<HTMLCanvasElement>('.hk-card canvas').forEach(cv => {
-      const i = Number(cv.dataset.i), row = frames[i];
+      const i = v.tables.length === 1 ? 0 : focus, row = interp(i, now - DELAY_MS);
       if (!row) return;
       const { m, p } = rowOf(row);
-      drawTable(cv, m, v.tables[i]?.winner >= 0 ? null : ahead(p, now), v.tables[i].ids.map(color), false);
+      drawTable(big, m, bigPuck(i, row[9], row[10], v.tables[i].winner >= 0 && row[10] < 0 ? null : p, v.tables[i].ids), pair(v.tables[i].ids), false);
+      goalFx();
+    }
+    root.querySelectorAll<HTMLCanvasElement>('.hk-card canvas').forEach(cv => {
+      const i = Number(cv.dataset.i), row = interp(i, now - DELAY_MS);
+      if (!row) return;
+      const { m, p } = rowOf(row);
+      drawTable(cv, m, v.tables[i]?.winner >= 0 || row[10] >= 0 ? null : p, pair(v.tables[i].ids), false);
     });
   }
 
@@ -222,7 +312,7 @@ export const hockeyGame = (): GameClient => {
       const now = app.now();
       // A new bracket round: fresh table, fresh grid.
       const key = `${v.stage}`;
-      if (key !== gridKey) { gridKey = key; focus = -1; puck = null; owner = false; mine = null; oppAt = 0; frames.length = 0; }
+      if (key !== gridKey) { gridKey = key; focus = -1; puck = null; owner = false; mine = null; oppAt = 0; frames.length = 0; buf.length = 0; off = { x: 0, y: 0 }; }
       const clock = v.phase === 'count' ? `<span class="hk-count">Puck drop in ${countdown(v.startAt)}</span>`
         : v.phase === 'break' ? `<span class="muted">Next round in ${countdown(v.nextAt)}</span>`
         : now < v.endAt ? timer(v.endAt, HOCKEY.matchMs) : '<span class="hk-ot">⚡ Golden goal</span>';

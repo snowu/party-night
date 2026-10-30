@@ -18,14 +18,15 @@ export const HOCKEY = {
   overtimeMs: 15000,      // golden goal after a draw; still level after this, a coin decides
   countdownMs: 3000,
   breakMs: 5000,
+  goalMs: 1800,           // the puck stays in the net this long: the slow-mo replay
   tickMs: 33,             // the room ticks this fast while an air hockey round is on
   sendMs: 33,             // mallet and puck updates from whoever has them
   dt: 1 / 120,
-  maxPuck: 4,
-  maxSwing: 3.5,          // a mallet never hits harder than this
-  glide: 0.12,            // share of speed lost per second: it's an air table
+  maxPuck: 2.6,           // the whole table in about three quarters of a second
+  maxSwing: 2,            // a mallet never hits harder than this
+  glide: 0.3,             // share of speed lost per second: it's an air table, but not ice
   rail: 0.9,              // share of speed kept off a rail
-  hit: 0.9,               // share of a hit the puck keeps
+  hit: 0.8,               // share of a hit the puck keeps
 };
 
 export interface Puck { x: number; y: number; vx: number; vy: number }
@@ -111,8 +112,9 @@ export interface HockeyView {
   alive: string[];        // still in the tournament
   me: { t: number; s: number } | null;
 }
-// A snapshot, {t:'hk'}, every tick: per table [m0x, m0y, m1x, m1y, px, py, pvx, pvy, pAt, n].
-// n counts puck resets (goals), so a stale state from before a goal is ignored.
+// A snapshot, {t:'hk'}, every tick: per table [m0x, m0y, m1x, m1y, px, py, pvx, pvy, pAt, n, goal].
+// n counts puck drops, so a stale state from before a goal is ignored; goal is the
+// side that just conceded while the replay plays, else -1.
 export interface HockeyFrame { t: 'hk'; at: number; T: number[][] }
 
 // What a bracket round is called, from how many are still in.

@@ -23,6 +23,8 @@ interface Table {
   ot: boolean;
   winner: number;
   coin: boolean;
+  goal: number;                  // the side that just conceded, during the slow-mo pause; else -1
+  resumeAt: number;
 }
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -80,7 +82,7 @@ export class Hockey implements ServerGame {
       return { id, m: { x, y, vx: 0, vy: 0 }, target: [x, y], lastM: now, lastP: 0, skill: this.skill.get(id) ?? 0.5, nextAim: 0 };
     };
     for (let i = 0; i + 1 < pool.length; i += 2) {
-      const t: Table = { sides: [side(pool[i], 0), side(pool[i + 1], 1)], score: [0, 0], puck: { x: 0, y: 0, vx: 0, vy: 0, at: now, n: 0 }, ownSince: now, ot: false, winner: -1, coin: false };
+      const t: Table = { sides: [side(pool[i], 0), side(pool[i + 1], 1)], score: [0, 0], puck: { x: 0, y: 0, vx: 0, vy: 0, at: now, n: 0 }, ownSince: now, ot: false, winner: -1, coin: false, goal: -1, resumeAt: 0 };
       this.drop(t, rng() < 0.5 ? 0 : 1, now);
       this.tables.push(t);
     }
@@ -94,8 +96,9 @@ export class Hockey implements ServerGame {
     t.ownSince = now;
   }
 
+  // A player's table while it's being played, and through the replay of its last goal.
   where(id: string): { t: Table; s: number } | null {
-    for (const t of this.tables) for (const s of [0, 1]) if (t.sides[s].id === id && t.winner < 0) return { t, s };
+    for (const t of this.tables) for (const s of [0, 1]) if (t.sides[s].id === id && (t.winner < 0 || t.goal >= 0)) return { t, s };
     return null;
   }
 
@@ -107,7 +110,7 @@ export class Hockey implements ServerGame {
 
   onMessage(from: string, msg: any, now: number) {
     const w = this.phase === 'break' ? null : this.where(from);
-    if (!w) return;
+    if (!w || w.t.winner >= 0) return;
     const { t, s } = w, side = t.sides[s], p = t.puck;
     if (msg?.k === 'm') {
       const [x, y] = clampMallet(s, Number(msg.x) || 0, Number(msg.y) || 0);
@@ -116,7 +119,7 @@ export class Hockey implements ServerGame {
       return;
     }
     // Only whoever has the puck may move it on, and never with a state from before a goal.
-    if (this.phase !== 'play' || msg?.n !== p.n || sideOf(p.y) !== s) return;
+    if (this.phase !== 'play' || t.goal >= 0 || msg?.n !== p.n || sideOf(p.y) !== s) return;
     if (msg.k === 'p') {
       const at = Math.min(now, Number(msg.at) || 0);
       if (at < p.at) return;
@@ -134,8 +137,11 @@ export class Hockey implements ServerGame {
     this.add(this.ga, ids[s]);
     for (const id of ids) if (!this.isBot(id)) this.ctx.send(id, { t: 'event', text: `🥅 ${this.name(ids[scorer])} scores · ${t.score[0]}–${t.score[1]}` });
     if (t.ot) this.add(this.golden, ids[scorer]);
+    // Hold the puck in the net while every screen plays the goal in slow motion.
+    t.goal = s;
+    t.resumeAt = now + HOCKEY.goalMs;
+    t.puck.vx = t.puck.vy = 0;
     if (t.ot || t.score[scorer] >= HOCKEY.firstTo) this.win(t, scorer);
-    else this.drop(t, s, now);
     this.ctx.changed();
   }
 
@@ -158,15 +164,18 @@ export class Hockey implements ServerGame {
       this.ctx.changed();
     }
     if (this.phase === 'play') {
-      for (const t of this.tables) if (t.winner < 0) this.run(t, now);
-      if (this.tables.every(t => t.winner >= 0)) { this.phase = 'break'; this.nextAt = now + HOCKEY.breakMs; this.ctx.changed(); }
+      for (const t of this.tables) {
+        if (t.winner < 0) this.run(t, now);
+        else if (t.goal >= 0 && now >= t.resumeAt) { t.goal = -1; this.ctx.changed(); }   // the winning goal's replay is over
+      }
+      if (this.tables.every(t => t.winner >= 0)) { this.phase = 'break'; this.nextAt = now + HOCKEY.breakMs + HOCKEY.goalMs; this.ctx.changed(); }
     } else if (this.phase === 'break' && now >= this.nextAt) {
       if (this.alive.length > 1) this.nextStage(now);
       else return this.finish();
     }
     this.ctx.toAll({
       t: 'hk', at: now,
-      T: this.tables.map(t => [...t.sides.flatMap(x => [r3(x.m.x), r3(x.m.y)]), r3(t.puck.x), r3(t.puck.y), r3(t.puck.vx), r3(t.puck.vy), Math.round(t.puck.at), t.puck.n]),
+      T: this.tables.map(t => [...t.sides.flatMap(x => [r3(x.m.x), r3(x.m.y)]), r3(t.puck.x), r3(t.puck.y), r3(t.puck.vx), r3(t.puck.vy), Math.round(t.puck.at), t.puck.n, t.goal]),
     });
   }
 
@@ -174,6 +183,12 @@ export class Hockey implements ServerGame {
     for (const s of [0, 1]) {
       const side = t.sides[s];
       if (this.isBot(side.id) || !this.ctx.connected(side.id)) this.aim(t, s, now);
+    }
+    if (t.goal >= 0) {
+      if (now < t.resumeAt) return;
+      this.drop(t, t.goal, now);
+      t.goal = -1;
+      this.ctx.changed();
     }
     // Run the puck while it's in a half the server has, until it crosses to a phone.
     const p = t.puck;
@@ -208,7 +223,7 @@ export class Hockey implements ServerGame {
           : clampMallet(s, p.x - (dx / d) * 0.2 + noise(), p.y - (dy / d) * 0.2 + noise());
       } else side.target = clampMallet(s, HOCKEY.W / 2 + (p.x - HOCKEY.W / 2) * 0.6 + noise(), gy + dir * 0.25);
     }
-    const speed = 1.6 + 1.4 * side.skill, dt = this.tickMs / 1000;
+    const speed = 1.1 + 0.9 * side.skill, dt = this.tickMs / 1000;
     const dx = side.target[0] - side.m.x, dy = side.target[1] - side.m.y, d = Math.sqrt(dx * dx + dy * dy), step = Math.min(d, speed * dt);
     moveMallet(side.m, side.m.x + (d ? (dx / d) * step : 0), side.m.y + (d ? (dy / d) * step : 0), dt, 0.6);
   }
