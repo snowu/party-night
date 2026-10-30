@@ -34,7 +34,7 @@ for (const [seed, want] of GOLDEN) {
   check(`race replay seed ${seed}`, got === want, `got ${got}`);
 }
 check('same seed, same course', JSON.stringify(raceState(7).pipes) === JSON.stringify(raceState(7).pipes));
-check('coins are seeded', [...Array(50).keys()].every(n => coinAt(9, n, true, true) === coinAt(9, n, true, true)));
+check('coins are seeded', [...Array(50).keys()].every(n => coinAt(9, n, true) === coinAt(9, n, true)));
 check('course length is sane', Math.abs(courseLength(30) - 30 * 60 * 4.3) < 30 * 60 * 0.5, String(courseLength(30)));
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -121,7 +121,13 @@ for (const [label, games, rounds] of [
   check(`${label}: reaches the podium`, room.phase === 'podium', room.phase);
   check(`${label}: plays every round`, room.history.length === rounds, `${room.history.length}`);
   const played = room.history.map(o => o.game);
-  check(`${label}: alternates lanes`, label !== 'mixed night' || played.every((g, i) => i === 0 || CATALOG.find(c => c.id === g)!.kind !== CATALOG.find(c => c.id === played[i - 1])!.kind), played.join(','));
+  const kind = (g: string) => CATALOG.find(c => c.id === g)!.kind;
+  check(`${label}: no game twice in a night`, new Set(played).size === Math.min(played.length, games.length), played.join(','));
+  if (label === 'mixed night') {
+    check(`${label}: opens on a bird round, never two in a row`, kind(played[0]) === 'bird' && played.every((g, i) => i === 0 || kind(g) !== 'bird' || kind(played[i - 1]) !== 'bird'), played.join(','));
+    const birds = played.filter(g => kind(g) === 'bird').length;
+    check(`${label}: about one bird round in three`, birds >= 3 && birds <= 5, `${birds} of ${played.length}`);
+  }
   const sums = new Map<string, number>();
   for (const o of room.history) for (const x of o.ranking) sums.set(x.id, (sums.get(x.id) ?? 0) + x.gained);
   check(`${label}: points add up`, [...room.players.values()].every(p => p.points === (sums.get(p.id) ?? 0)));

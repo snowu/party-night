@@ -4,11 +4,11 @@ A Mario Party-style night of short minigames for team retros: one lobby, a runni
 
 ## The night
 
-Bird and social rounds take turns. Each round's places become points: 10/7/5/3/1, with ties sharing the higher score. Every 4th round and the last round are 🌪️ chaos rounds worth double.
+No game repeats in a night. About one round in three is a bird game, never two in a row, and the night opens with one. Each round's places become points: 10/7/5/3/1, with ties sharing the higher score. Every 4th round and the last round are 🌪️ chaos rounds worth double.
 
 | Bird rounds | |
 |---|---|
-| Bird Race | First to the 🏁. Bonks stagger you and never stop you. ⚡ coins warp you ahead, more the further behind you are. 🎯 coins hit the leader. Flap on GO for a slingshot start. Top two within 0.3s get a photo finish. |
+| Bird Race | 30 seconds to the 🏁. Bonks stagger you and never stop you. 🎯 coins briefly slow or bonk whoever is leading. Top two within 0.3s get a photo finish. |
 | Least Privilege | No finish line. Every 6s the last place gets deprovisioned. |
 | One Life | No bonks: one hit and you're out. The course is gentler to make up for it. |
 | Dev vs Ops | Two teams, 40 seconds, combined distance. |

@@ -23,10 +23,8 @@ interface Run {
   fm: number;
   bk: number;
   brain: R.Brain | null;     // null = a human (me)
-  revoked: boolean;          // Permission Revoked: the next coin does nothing
   dirty: boolean;
   lastSent: number;
-  slingshot: boolean;
 }
 
 interface Remote { id: string; y: number; vy: number; g: number; size: number; d: number; sp: number; at: number; st: St; dispY: number }
@@ -58,8 +56,8 @@ export const birdGame = (): GameClient => {
   let cam: GameState, camBrain: R.Brain;
   let simTimer = 0, sendTimer = 0, repTimer = 0, raf = 0;
   let acc = 0, lastT = 0, started = false;
-  let pendingFlap = false, slingTried = false, slingPending = false;
-  let bonkFx = -1e9, warpFx = -1e9;
+  let pendingFlap = false;
+  let bonkFx = -1e9;
   let pop: { text: string; color: string; at: number } | null = null;
   // Portrait phones see a narrower slice of the course (the bird still sits at
   // PLAYER_X), with a bigger HUD, so nothing is drawn at postage-stamp size.
@@ -70,7 +68,7 @@ export const birdGame = (): GameClient => {
   const view = () => app.s.gv as BirdView | null;
   const myRun = () => (app.me ? runs.get(app.me) : undefined);
   const serverBird = (id: string): BirdPub | undefined => view()?.birds.find(b => b.id === id);
-  const coinOf = (n: number) => R.coinAt(seed, n, v.coins, v.attacks);
+  const coinOf = (n: number) => R.coinAt(seed, n, v.attacks);
 
   // ── standings: my own runs exactly, everyone else dead-reckoned ──
   function extrapolate(r: Remote, now: number) {
@@ -96,14 +94,12 @@ export const birdGame = (): GameClient => {
     const rank = (r: Row) => r.st === 'fin' ? 0 : r.st === 'fly' ? 1 : r.st === 'out' ? 2 : 3;
     return rows.sort((a, b) => rank(a) - rank(b) || (a.st === 'fin' ? a.fm - b.fm : b.d - a.d));
   }
-  const leadDist = (id: string) => Math.max(0, ...standings().filter(r => r.id !== id && r.st !== 'gone').map(r => r.d));
 
   // ── sim ──
   function newRun(id: string, bot: boolean): Run {
     return {
       id, s: R.raceState(seed, oneLife), seen: new WeakSet(), st: 'fly', fm: 0, bk: 0,
-      brain: bot ? R.newBrain(0.3 + Math.random() * 0.45) : null, revoked: false, dirty: true, lastSent: 0,
-      slingshot: bot && v.slingshot && Math.random() < 0.3,
+      brain: bot ? R.newBrain(0.3 + Math.random() * 0.45) : null, dirty: true, lastSent: 0,
     };
   }
 
@@ -123,11 +119,6 @@ export const birdGame = (): GameClient => {
   function tickRun(r: Run, t: number) {
     if (r.st !== 'fly') return;
     const mine = r.id === app.me;
-    if (r.slingshot || (mine && slingPending)) {
-      r.slingshot = false;
-      if (mine) { slingPending = false; popText('🚀 Slingshot launch!', '#ffd23f'); warpFx = performance.now(); }
-      R.warp(r.s, R.SLINGSHOT_PX);
-    }
     let flapped = false;
     if (r.brain) flapped = R.decide(r.s, r.brain, Math.random);
     else if (pendingFlap) { flapped = true; pendingFlap = false; }
@@ -146,17 +137,7 @@ export const birdGame = (): GameClient => {
     }
     if (flapped) r.dirty = true;
     const coin = R.passItems(r.s, r.seen, coinOf);
-    if (coin === 'warp') {
-      if (r.revoked) {
-        r.revoked = false;
-        if (mine) popText('🔒 Permission Revoked: no warp', '#ff6b8a');
-      } else {
-        const px = R.warpDistance(r.s.dist, leadDist(r.id));
-        R.warp(r.s, px);
-        if (mine) { warpFx = performance.now(); popText(`⚡ Warp +${Math.round(px / PX_PER_M)}m`, '#facc15'); }
-      }
-      r.dirty = true;
-    } else if (coin === 'atk') attack(r);
+    if (coin === 'atk') attack(r);
     if (Number.isFinite(finishDist) && r.s.dist >= finishDist) {
       r.st = 'fin';
       r.fm = t - startAt;
@@ -194,11 +175,10 @@ export const birdGame = (): GameClient => {
     if (!r || r.st !== 'fly') return;
     if (kind === 'rate') R.rateLimit(r.s);
     else if (kind === 'mfa') R.bonk(r.s);
-    else if (kind === 'revoked') r.revoked = true;
     r.dirty = true;
     if (target === app.me) {
       const a = ATTACKS.find(x => x.id === kind)!;
-      if (kind !== 'revoked') bonkFx = performance.now();
+      bonkFx = performance.now();
       popText(`🎯 ${app.player(by)?.name ?? 'Someone'}: ${a.name}`, '#ff6b8a');
     }
   }
@@ -223,8 +203,6 @@ export const birdGame = (): GameClient => {
 
   function flap() {
     const t = app.now();
-    if (v.slingshot && !slingTried && Math.abs(t - startAt) <= R.SLINGSHOT_WINDOW_MS) { slingTried = true; slingPending = true; }
-    else if (t < startAt - R.SLINGSHOT_WINDOW_MS) slingTried = true;   // jumped the gun: no slingshot
     if (t >= startAt) pendingFlap = true;
   }
   const onKey = (e: KeyboardEvent) => {
@@ -319,7 +297,7 @@ export const birdGame = (): GameClient => {
       const seen = me && me.st === 'fly' ? me.seen.has(p) : p.x + C.PIPE_W / 2 < C.PLAYER_X;
       if (coin && !seen) {
         const cx = p.x + C.PIPE_W / 2, cy = p.topH + p.gap / 2 + Math.sin(performance.now() / 200 + p.n) * 4;
-        g.fillStyle = coin === 'warp' ? '#facc15' : '#ff8a3d';
+        g.fillStyle = '#ff8a3d';
         g.strokeStyle = '#0d0820';
         g.lineWidth = 3;
         g.beginPath();
@@ -329,7 +307,7 @@ export const birdGame = (): GameClient => {
         g.font = `18px ${EMOJI}`;
         g.textAlign = 'center';
         g.textBaseline = 'middle';
-        g.fillText(coin === 'warp' ? '⚡' : '🎯', cx, cy + 1);
+        g.fillText('🎯', cx, cy + 1);
       }
     }
   }
@@ -393,18 +371,6 @@ export const birdGame = (): GameClient => {
   function drawFx(now: number) {
     const tb = (now - bonkFx) / 300;
     if (tb < 1) { g.fillStyle = `rgba(255,77,109,${0.3 * (1 - tb)})`; g.fillRect(0, 0, W, C.GROUND); }
-    const tw = (now - warpFx) / 600;
-    if (tw < 1) {
-      g.fillStyle = `rgba(255,255,255,${0.4 * Math.max(0, 1 - tw * 3)})`;
-      g.fillRect(0, 0, W, C.GROUND);
-      g.strokeStyle = `rgba(255,255,255,${0.7 * (1 - tw)})`;
-      g.lineWidth = 3;
-      for (let i = 0; i < 14; i++) {
-        const y = ((Math.sin(i * 7.3) + 1) / 2) * C.GROUND;
-        const x = W - ((now * 2.2 + i * 137) % (W + 200));
-        g.beginPath(); g.moveTo(x, y); g.lineTo(x + 120, y); g.stroke();
-      }
-    }
   }
 
   function label(r: Row): string {
@@ -512,13 +478,6 @@ export const birdGame = (): GameClient => {
     const text = left > 0 ? String(Math.ceil(left / 1000)) : 'GO!';
     g.strokeText(text, W / 2, C.H / 2 - 40);
     g.fillText(text, W / 2, C.H / 2 - 40);
-    if (left > 0 && myRun() && v.slingshot) {
-      g.font = fs(26);
-      g.lineWidth = 6;
-      g.strokeText('Flap right on GO for a slingshot 🚀', W / 2, C.H / 2 + 70, W - 40);
-      g.fillStyle = '#fff';
-      g.fillText('Flap right on GO for a slingshot 🚀', W / 2, C.H / 2 + 70, W - 40);
-    }
     g.restore();
   }
 

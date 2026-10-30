@@ -1,7 +1,7 @@
 // Draw It and Hum & Mime. Unlike the other social rounds this screen isn't
 // re-rendered wholesale: the drawing canvas has to survive every state message,
 // so only the small regions around it are refreshed.
-import { chip, esc, fmt, timer, type App, type GameClient } from '../../app.ts';
+import { chip, esc, fmt, tickTimers, timer, type App, type GameClient } from '../../app.ts';
 import { canPlay } from './wrap.ts';
 import { paint, pen, toolsHtml, type Pen, type Stroke } from './ink.ts';
 
@@ -17,7 +17,7 @@ export const guessGame = (): GameClient => {
     if (last[sel] === html) return;
     last[sel] = html;
     const el = root.querySelector(sel);
-    if (el) el.innerHTML = html;
+    if (el) { el.innerHTML = html; tickTimers(app.now()); }
   };
   const queuePaint = () => {
     if (paintQueued) return;

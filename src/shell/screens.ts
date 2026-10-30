@@ -67,7 +67,7 @@ export function lobby(app: App) {
     <div class="card wide">
       <h2>Tonight</h2>
       <div class="row"><span class="muted">Rounds</span>${ROUND_CHOICES.map(n => `<button class="pillbtn ${s.settings.rounds === n ? 'on' : ''}" data-act="rounds" data-v="${n}" ${host ? '' : 'disabled'}>${n}</button>`).join('')}</div>
-      <p class="muted small">Bird and social rounds take turns. Points: ${PLACE_POINTS.join('/')} by place, ties share; every 4th round and the last are 🌪️ chaos rounds worth double.</p>
+      <p class="muted small">No game repeats in a night, and about one round in three is a bird game (never two in a row). Points: ${PLACE_POINTS.join('/')} by place, ties share; every 4th round and the last are 🌪️ chaos rounds worth double.</p>
       <div class="games">${games}</div>
       ${host ? `<button class="big wide" data-act="start">Start the night</button>` : `<p class="center muted">Waiting for ${esc(app.player(s.hostId)?.name ?? 'the host')} to start…</p>`}
     </div>

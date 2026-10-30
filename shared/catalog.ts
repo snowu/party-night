@@ -9,7 +9,7 @@ export interface CatalogEntry extends GameInfo {
 
 export const CATALOG: CatalogEntry[] = [
   { id: 'race', kind: 'bird', minPlayers: 1, title: 'Bird Race', blurb: 'Flap. Bonk. Flap again. First to the 🏁 wins.',
-    how: 'Tap, click or Space to flap. Thread the ⚡ coins to warp ahead, the 🎯 ones hit the leader.' },
+    how: 'Tap, click or Space to flap. Thread a 🎯 coin to hit whoever is leading.' },
   { id: 'leastpriv', kind: 'bird', minPlayers: 2, title: 'Least Privilege', blurb: 'Every few seconds, last place gets deprovisioned.',
     how: 'Same race, no finish line. Stay out of last place when the audit comes round.' },
   { id: 'onelife', kind: 'bird', minPlayers: 1, title: 'One Life', blurb: 'No bonks. No respawns. No second chances.',

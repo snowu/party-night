@@ -1,7 +1,7 @@
 // Draw Off: draw the word on your own canvas for 30s, then vote on the anonymous
 // gallery. The wall's canvases are built once, when the server sends the drawings;
 // state updates only touch the captions (votes, and the artists at the reveal).
-import { chip, esc, fmt, timer, type App, type GameClient } from '../../app.ts';
+import { chip, esc, fmt, tickTimers, timer, type App, type GameClient } from '../../app.ts';
 import { canPlay } from './wrap.ts';
 import { paint, pen, toolsHtml, type Pen, type Stroke } from './ink.ts';
 
@@ -20,7 +20,7 @@ export const galleryGame = (): GameClient => {
     if (last[sel] === html) return;
     last[sel] = html;
     const el = root.querySelector(sel);
-    if (el) el.innerHTML = html;
+    if (el) { el.innerHTML = html; tickTimers(app.now()); }
   };
   const repaintMine = () => {
     if (queued) return;

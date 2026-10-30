@@ -1,7 +1,7 @@
 // Social rounds are plain HTML re-rendered from each state message. The wrapper
 // only touches the DOM when the markup changes, keeps whatever you were typing,
 // and routes clicks/submits on [data-act] elements to the view.
-import type { App, GameClient } from '../../app.ts';
+import { tickTimers, type App, type GameClient } from '../../app.ts';
 
 export interface SocialView {
   render(app: App, gv: any): string;
@@ -48,6 +48,7 @@ export function social(view: SocialView): () => GameClient {
         const keep = f && root.contains(f) && f.id ? { id: f.id, v: f.value, at: f.selectionStart } : null;
         const values = [...root.querySelectorAll<HTMLInputElement>('input[id],textarea[id]')].map(i => [i.id, i.value] as const);
         root.innerHTML = html;
+        tickTimers(a.now());   // a fresh bar starts at the right width, not full
         for (const [id, v] of values) { const i = root.querySelector<HTMLInputElement>(`#${id}`); if (i && i.type !== 'range') i.value = v; }
         if (keep) {
           const i = root.querySelector<HTMLInputElement>(`#${keep.id}`);

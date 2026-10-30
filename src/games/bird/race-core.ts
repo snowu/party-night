@@ -1,6 +1,6 @@
 // ─── RACE CORE ────────────────────────────────────────────────────────────────
 // The pure, DOM-free half of the bird games (ported from LPB's multiplayer.ts):
-// course tuning, coins, warps and bonks. Every client builds the same course from
+// course tuning, 🎯 coins and bonks. Every client builds the same course from
 // the round seed, so this must stay deterministic: no wall clock, no Math.random.
 import { C, SPEED_UP_TICKS, createState, defOf, mulberry32, type GameState, type Pipe, type StateOpts } from './physics-core.ts';
 
@@ -19,13 +19,6 @@ export const ONE_LIFE_OPTS = { ...RACE_OPTS, gapMul: 1.35, maxSpeedLevel: 4 } sa
 export const raceState = (seed: number, oneLife = false) => createState(seed, oneLife ? ONE_LIFE_OPTS : RACE_OPTS);
 
 export const ITEM_GRAB_PX = 34;     // how close to the gap centre you must pass to grab a coin
-// Rubber-band warp (kart-racer style): a coin throws you further the further you
-// trail the leader. A nudge at the front, a real catch-up at the back.
-export const WARP_MIN_PX = 150;
-export const WARP_MAX_PX = 700;
-export const WARP_PER_PX_BEHIND = 0.6;
-export const SLINGSHOT_PX = 260;    // flap within the GO window for a launch boost
-export const SLINGSHOT_WINDOW_MS = 250;
 
 // Distance a clean, warp-free run covers in `sec` seconds (mirrors step()'s ramp).
 export function courseLength(sec: number, opts: StateOpts = RACE_OPTS): number {
@@ -39,16 +32,13 @@ export function courseLength(sec: number, opts: StateOpts = RACE_OPTS): number {
   return dist;
 }
 
-export type Coin = '' | 'warp' | 'atk';
+export type Coin = '' | 'atk';
 
-// What sits in pipe n's gap: deterministic from the seed + spawn index, so every
-// racer sees the same coins on the same pipes. ~1 in 7 warps, ~1 in 14 attacks.
-export function coinAt(seed: number, n: number, coins: boolean, attacks: boolean): Coin {
-  if (n < 1 || !coins) return '';
-  const r = mulberry32((seed ^ Math.imul(n, 0x9E3779B1)) >>> 0)();
-  if (r < 0.15) return 'warp';
-  if (attacks && r < 0.22 && n > 4) return 'atk';
-  return '';
+// Whether pipe n's gap holds a 🎯 coin: deterministic from the seed + spawn index,
+// so every racer sees the same coins on the same pipes. About 1 gap in 10.
+export function coinAt(seed: number, n: number, attacks: boolean): Coin {
+  if (n < 5 || !attacks) return '';
+  return mulberry32((seed ^ Math.imul(n, 0x9E3779B1)) >>> 0)() < 0.1 ? 'atk' : '';
 }
 
 // Judge each pipe once as its centre passes the bird: returns the coin grabbed, if any.
@@ -62,11 +52,8 @@ export function passItems(s: GameState, seen: WeakSet<Pipe>, coinOf: (n: number)
   return '';
 }
 
-export const warpDistance = (dist: number, leadDist: number) =>
-  Math.min(WARP_MAX_PX, WARP_MIN_PX + Math.max(0, leadDist - dist) * WARP_PER_PX_BEHIND);
-
-// Jump `px` along the course and clear the runway. Position, speed and control are
-// untouched, so there is nothing to recover from.
+// Jump `px` along the course and clear the runway. Only the spectator camera uses
+// this now, to keep up with the leader; racers never teleport.
 export function warp(s: GameState, px: number) {
   const r = C.PLAYER_SIZE / 2;
   s.dist += px;

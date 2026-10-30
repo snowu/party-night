@@ -6,7 +6,7 @@
 // The room is the authority for the shell: who is host (the earliest-joined human
 // still connected), the round rotation, points and awards. Each round's game
 // module decides that round's ranking; the room turns places into points.
-import { CATALOG, DEFAULT_GAMES, gameById } from '../../shared/catalog.ts';
+import { DEFAULT_GAMES, gameById } from '../../shared/catalog.ts';
 import { isChaos, mulberry32, pointsFor } from '../../shared/points.ts';
 import {
   AVATARS, COLORS, HATS, MAX_BOTS, MAX_FRAME, MAX_PLAYERS, ROUND_CHOICES,
@@ -37,7 +37,8 @@ export class RoomCore {
   conns = new Set<Conn>();
   phase: Phase = 'lobby';
   settings: Settings = { rounds: 8, games: [...DEFAULT_GAMES] };
-  playlist: string[] = [];
+  playlist: string[] = [];        // games played (or playing) tonight, in order
+  totalRounds = 0;
   round = 0;
   gameId = '';
   game: ServerGame | null = null;
@@ -167,7 +168,8 @@ export class RoomCore {
         if (this.phase !== 'lobby') return;
         for (const p of this.players.values()) p.points = 0;
         this.history = [];
-        this.playlist = this.buildPlaylist();
+        this.playlist = [];
+        this.totalRounds = this.settings.rounds;
         this.round = 0;
         this.advance(now);
         break;
@@ -184,26 +186,32 @@ export class RoomCore {
       case 'again':
         if (this.phase !== 'podium') return;
         for (const p of this.players.values()) p.points = 0;
-        Object.assign(this, { phase: 'lobby', round: 0, history: [], outcome: null, nightAwards: [], game: null, gameId: '', phaseEndsAt: 0 });
+        Object.assign(this, { phase: 'lobby', round: 0, totalRounds: 0, playlist: [], history: [], outcome: null, nightAwards: [], game: null, gameId: '', phaseEndsAt: 0 });
         break;
     }
     this.dirty = true;
   }
 
   // ── rotation ───────────────────────────────────────────────────────────────
-  // Bird and social rounds take turns, each lane shuffled, with no game twice in a row.
-  buildPlaylist(): string[] {
-    const enabled = CATALOG.filter(g => this.settings.games.includes(g.id));
-    const lanes = [enabled.filter(g => g.kind === 'bird'), enabled.filter(g => g.kind === 'social')].filter(l => l.length);
-    const queues: string[][] = lanes.map(() => []);
-    const out: string[] = [];
-    for (let i = 0; i < this.settings.rounds; i++) {
-      const k = i % lanes.length;
-      if (!queues[k].length) queues[k] = this.shuffled(lanes[k].map(g => g.id));
-      if (queues[k].length > 1 && queues[k][0] === out[out.length - lanes.length]) queues[k].push(queues[k].shift()!);
-      out.push(queues[k].shift()!);
-    }
-    return out;
+  // Picked one round at a time, from who's actually here: no game twice in a night
+  // until every eligible one has been played, and bird rounds spread out to their
+  // share of the enabled games (about one in three), never two in a row, with
+  // the night opening on one.
+  pickNext(): string {
+    const kind = (g: string) => gameById(g)?.kind;
+    const enabled = this.settings.games.filter(g => gameById(g));
+    const ok = enabled.filter(g => this.eligible(g));
+    const pool = ok.length ? ok : ['quiz'];
+    const last = this.playlist[this.playlist.length - 1];
+    let fresh = pool.filter(g => !this.playlist.includes(g));
+    if (!fresh.length) fresh = pool.filter(g => g !== last);
+    if (!fresh.length) fresh = pool;
+    const share = enabled.filter(g => kind(g) === 'bird').length / Math.max(1, enabled.length);
+    const k = this.playlist.length + 1;
+    const birds = this.playlist.filter(g => kind(g) === 'bird').length;
+    const wantBird = kind(last ?? '') !== 'bird' && birds < Math.round((k - 0.5) * share + 0.5);
+    const lane = fresh.filter(g => (kind(g) === 'bird') === wantBird);
+    return this.shuffled(lane.length ? lane : fresh)[0];
   }
 
   private shuffled<T>(xs: T[]): T[] {
@@ -227,15 +235,10 @@ export class RoomCore {
   private advance(now: number) {
     this.game = null;
     this.outcome = null;
-    if (this.round >= this.playlist.length) return this.podium(now);
+    if (this.round >= this.totalRounds) return this.podium(now);
     this.round++;
-    let id = this.playlist[this.round - 1];
-    if (!this.eligible(id)) {
-      const kind = gameById(id)?.kind;
-      const alts = this.shuffled(this.settings.games.filter(g => g !== id && this.eligible(g)));
-      id = alts.find(g => gameById(g)?.kind === kind) ?? alts[0] ?? this.shuffled(['race', 'quiz'].filter(g => this.eligible(g)))[0] ?? 'race';
-      this.playlist[this.round - 1] = id;
-    }
+    const id = this.pickNext();
+    this.playlist.push(id);
     this.gameId = id;
     this.participants = [...this.players.values()].filter(p => p.bot || p.conns.size).map(p => p.id);
     this.seed = Math.floor(this.rand() * 0xffffffff) >>> 0;
@@ -266,7 +269,7 @@ export class RoomCore {
 
   private endRound(now: number) {
     const r = this.game!.result!;
-    const chaos = isChaos(this.round, this.playlist.length);
+    const chaos = isChaos(this.round, this.totalRounds);
     const ranking = r.ranking.map(x => ({ ...x, gained: pointsFor(x.place, chaos) }));
     for (const x of ranking) { const p = this.players.get(x.id); if (p) p.points += x.gained; }
     this.outcome = {
@@ -362,9 +365,9 @@ export class RoomCore {
       hostId: this.hostId(),
       players: [...this.players.values()].map(({ conns, lastSeen, ...p }) => ({ ...p, connected: p.bot || conns.size > 0 })),
       round: this.round,
-      totalRounds: this.playlist.length || this.settings.rounds,
+      totalRounds: this.totalRounds || this.settings.rounds,
       game: info && this.phase !== 'lobby' && this.phase !== 'podium'
-        ? { id: info.id, title: info.title, blurb: info.blurb, kind: info.kind, how: info.how, chaos: isChaos(this.round, this.playlist.length) }
+        ? { id: info.id, title: info.title, blurb: info.blurb, kind: info.kind, how: info.how, chaos: isChaos(this.round, this.totalRounds) }
         : null,
       participants: this.participants,
       seed: this.seed,

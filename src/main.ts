@@ -49,6 +49,7 @@ function patch(el: HTMLElement, html: string) {
   const f = document.activeElement as HTMLInputElement | null;
   const keep = f && el.contains(f) && f.id ? { id: f.id, v: f.value } : null;
   el.innerHTML = html;
+  if (app?.s) tickTimers(app.now());
   if (keep) { const i = el.querySelector<HTMLInputElement>(`#${keep.id}`); if (i) { i.value = keep.v; i.focus(); } }
   return true;
 }
@@ -165,7 +166,9 @@ document.addEventListener('click', e => {
   }
 });
 
-setInterval(() => { if (app?.s) tickTimers(app.now()); }, 100);
+// Timer bars move every frame (no CSS transition: a re-render would replay it).
+const frame = () => { if (app?.s) tickTimers(app.now()); requestAnimationFrame(frame); };
+requestAnimationFrame(frame);
 
 // ── boot ──
 const code = (params.get('room') ?? '').toUpperCase();
