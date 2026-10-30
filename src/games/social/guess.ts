@@ -31,7 +31,9 @@ export const guessGame = (): GameClient => {
     return toolsHtml(pn);
   }
 
-  return {
+  // Named so the click handler can be removed: #game is shared by every round.
+  let onClick = (_e: Event) => {};
+  const client: GameClient = {
     mount(r, a) {
       root = r; app = a;
       const gv = a.s.gv as any;
@@ -51,15 +53,16 @@ export const guessGame = (): GameClient => {
         if (i.value.trim()) app.net.game({ k: 'guess', text: i.value.trim() });
         i.value = '';
       });
-      root.addEventListener('click', e => {
+      onClick = (e: Event) => {
         const b = (e.target as HTMLElement).closest<HTMLElement>('button');
         if (!b) return;
         if (b.dataset.c && pn) pn.color = b.dataset.c;
         if (b.dataset.w && pn) pn.size = Number(b.dataset.w);
         if (b.hasAttribute('data-clear')) { strokes.clear(); queuePaint(); app.net.game({ k: 'clear' }); }
         if (b.hasAttribute('data-pass')) app.net.game({ k: 'pass' });
-        this.update(app);
-      });
+        client.update(app);
+      };
+      root.addEventListener('click', onClick);
       this.update(a);
     },
     update(a) {
@@ -94,6 +97,7 @@ export const guessGame = (): GameClient => {
       else return;
       queuePaint();
     },
-    unmount() { pn?.stop(); root.innerHTML = ''; cv = null; },
+    unmount() { pn?.stop(); root.removeEventListener('click', onClick); root.innerHTML = ''; cv = null; },
   };
+  return client;
 };

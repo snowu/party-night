@@ -55,7 +55,9 @@ export const galleryGame = (): GameClient => {
     }
   }
 
-  return {
+  // Named so the click handler can be removed: #game is shared by every round.
+  let onClick = (_e: Event) => {};
+  const client: GameClient = {
     mount(r, a) {
       root = r; app = a;
       root.className = 'gallery';
@@ -67,15 +69,16 @@ export const galleryGame = (): GameClient => {
       pn = pen(cv, mine, () => gv()?.step === 'draw' && gv().drawing, repaintMine,
         (id, st, pts) => app.net.game({ k: 'ink', id, c: st.c, w: st.w, pts }));
       repaintMine();
-      root.addEventListener('click', e => {
+      onClick = (e: Event) => {
         const b = (e.target as HTMLElement).closest<HTMLElement>('button');
         if (!b || !pn) return;
         if (b.dataset.c) pn.color = b.dataset.c;
         if (b.dataset.w) pn.size = Number(b.dataset.w);
         if (b.hasAttribute('data-clear')) { mine.clear(); repaintMine(); app.net.game({ k: 'clear' }); }
         if (b.dataset.vote) app.net.game({ k: 'vote', slot: Number(b.dataset.vote) });
-        this.update(app);
-      });
+        client.update(app);
+      };
+      root.addEventListener('click', onClick);
       this.update(a);
     },
     update(a) {
@@ -101,6 +104,7 @@ export const galleryGame = (): GameClient => {
       buildWall();
       captions();
     },
-    unmount() { pn?.stop(); root.innerHTML = ''; },
+    unmount() { pn?.stop(); root.removeEventListener('click', onClick); root.innerHTML = ''; },
   };
+  return client;
 };
