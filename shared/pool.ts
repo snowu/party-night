@@ -6,7 +6,7 @@
 //
 // The table is 2 × 1 with six pockets: the corners and the middle of each long rail.
 
-export const POOL = { w: 2, h: 1, r: 0.03, maxSpeed: 4, dt: 1 / 120, maxSteps: 120 * 10 };
+export const POOL = { w: 2, h: 1, r: 0.03, maxSpeed: 6, bounce: 0.99, dt: 1 / 120, maxSteps: 120 * 10 };
 export const POCKETS: Array<[number, number]> = [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]];
 
 export interface Layout {
@@ -62,7 +62,8 @@ export function step(t: Table) {
     b.x += b.vx * dt; b.y += b.vy * dt;
     moving = true;
   }
-  // Ball on ball: an elastic bump, heavier balls barely notice lighter ones.
+  // Ball on ball: a near-elastic bump (lossier and a packed rack soaks a break up);
+  // heavier balls barely notice lighter ones.
   for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
     const a = live[i], b = live[j];
     const dx = b.x - a.x, dy = b.y - a.y, min = a.r + b.r, d2 = dx * dx + dy * dy;
@@ -70,7 +71,7 @@ export function step(t: Table) {
     const d = Math.sqrt(d2), nx = dx / d, ny = dy / d;
     const rel = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
     if (rel > 0) {
-      const J = (1.95 * rel) / (1 / a.m + 1 / b.m);
+      const J = ((1 + POOL.bounce) * rel) / (1 / a.m + 1 / b.m);
       a.vx -= (J / a.m) * nx; a.vy -= (J / a.m) * ny;
       b.vx += (J / b.m) * nx; b.vy += (J / b.m) * ny;
     }

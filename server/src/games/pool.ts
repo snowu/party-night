@@ -11,7 +11,7 @@ const POT = 250, SCRATCH = 250, BEST = 250;
 const R = POOL.r;
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
-const base = { cue: [0.45, 0.5] as [number, number], cueR: R, cueM: 1, pegs: [] as Layout['pegs'], kick: 1, rail: 0.85, friction: 0.2, drag: 0.25, pocket: 0.085 };
+const base = { cue: [0.45, 0.5] as [number, number], cueR: R, cueM: 1, pegs: [] as Layout['pegs'], kick: 1, rail: 0.85, friction: 0.12, drag: 0.15, pocket: 0.078 };
 
 // A triangle rack pointing at the cue ball, apex at (x, y).
 function triangle(x: number, y: number, rows: number, gap = 0.002): Array<[number, number]> {
@@ -33,8 +33,8 @@ function scatter(rng: () => number, n: number, avoid: Array<[number, number, num
 
 const LAYOUTS: Array<(rng: () => number) => Layout> = [
   () => ({ ...base, name: 'Break Room Classic', tag: 'A normal pool table. Break the rack.', balls: triangle(1.3, 0.5, 5) }),
-  rng => ({ ...base, name: 'Freshly Waxed', tag: 'Facilities polished the felt. Nothing ever stops.', friction: 0.08, drag: 0.08, balls: scatter(rng, 7, [[0.45, 0.5, R]]) }),
-  rng => ({ ...base, name: 'Bouncy Castle', tag: 'The rails are made of trampoline.', rail: 1.08, balls: scatter(rng, 7, [[0.45, 0.5, R]]) }),
+  rng => ({ ...base, name: 'Freshly Waxed', tag: 'Facilities polished the felt. Nothing ever stops.', friction: 0.03, drag: 0.04, balls: scatter(rng, 7, [[0.45, 0.5, R]]) }),
+  rng => ({ ...base, name: 'Bouncy Castle', tag: 'The rails are made of trampoline.', rail: 1.04, balls: scatter(rng, 7, [[0.45, 0.5, R]]) }),
   rng => {
     const pegs: Layout['pegs'] = [[1, 0.5, 0.06], [1.35, 0.27, 0.05], [1.35, 0.73, 0.05], [0.7, 0.25, 0.04], [0.7, 0.75, 0.04]];
     return { ...base, name: 'Pinball Wizard', tag: 'Someone installed bumpers. Nobody asked why.', pegs, kick: 1.3, balls: scatter(rng, 7, [[0.45, 0.5, R], ...pegs]) };
