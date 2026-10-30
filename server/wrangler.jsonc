@@ -1,0 +1,14 @@
+// Party Night rooms + hall of fame. Deploy yourself: `cd server && npx wrangler deploy`
+// (separate from the GitHub Pages deploy of the page).
+{
+  "name": "party-night",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "Room" },
+      { "name": "HOF", "class_name": "HallOfFame" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room", "HallOfFame"] }]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "party-night",
+  "version": "1.0.0",
+  "description": "A Mario Party-style night of minigames for team retros",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "esbuild src/main.ts --bundle --outfile=dist/bundle.js --format=iife --sourcemap --servedir=. --watch=forever --serve=8004",
+    "build": "esbuild src/main.ts --bundle --outfile=dist/bundle.js --format=iife --sourcemap --minify",
+    "server": "cd server && wrangler dev --port 8799",
+    "test": "esbuild tests/run.ts --bundle --platform=node --format=esm --outfile=dist/test.mjs && node dist/test.mjs",
+    "test:e2e": "node tests/e2e.mjs",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p server"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261029.1",
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.156.0"
+  }
+}
