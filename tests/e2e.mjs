@@ -22,7 +22,7 @@ async function open(name, query, size = { width: 1280, height: 800 }) {
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(`${name}: ${e.message}`));
   page.on('console', m => { if (m.type() === 'error') errors.push(`${name}: ${m.text()}`); });
-  await page.goto(`${BASE}/?${query}`);
+  await page.goto(`${BASE}/?${query}&dev=1`);
   return page;
 }
 

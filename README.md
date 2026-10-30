@@ -34,7 +34,7 @@ npm run server   # Worker + Durable Objects on :8799 (wrangler dev)
 npm run dev      # the page on http://localhost:8004
 ```
 
-On localhost the page connects to `ws://<host>:8799`. On `*.github.io` it connects to `wss://party-night.zancato-t.workers.dev`. Dev hooks `devApp()`, `devState()` and `devGame()` exist only off github.io.
+On localhost the page connects to `ws://<host>:8799`. On `*.github.io` it connects to `wss://party-night.zancato-t.workers.dev`. Dev hooks `devApp()`, `devState()` and `devGame()` are on off github.io, and on the live site with `?dev=1` (which is how `test:e2e` drives it: `BASE=https://snowu.github.io/party-night npm run test:e2e`).
 
 ## Tests
 

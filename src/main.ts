@@ -23,7 +23,8 @@ const GAMES: Record<string, () => GameClient> = {
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const params = new URLSearchParams(location.search);
 const tv = params.get('tv') === '1';
-const local = !location.hostname.endsWith('github.io');
+// Dev hooks for the browser tests: always on localhost, and on the live site with ?dev=1.
+const local = !location.hostname.endsWith('github.io') || params.get('dev') === '1';
 
 function store(k: string, v?: string) {
   try { if (v === undefined) return localStorage.getItem(k) ?? ''; localStorage.setItem(k, v); } catch {}
