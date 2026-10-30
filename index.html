@@ -235,6 +235,12 @@ body.offline::after { content: "Reconnecting…"; position: fixed; top: 10px; le
 .pool-card { background: var(--panel); border-radius: 12px; padding: 6px; display: grid; gap: 6px; }
 .pool-card canvas { width: 100%; aspect-ratio: 2.14 / 1.14; border-radius: 8px; display: block; }
 .pool-cap { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.toggle { position: relative; }
+.toggle .why { grid-column: 2; }
+.toggle .why, p.why { color: #ffb347; font-size: .8rem; }
+.toggle .try { position: absolute; top: 8px; right: 8px; padding: 2px 8px; font-size: .75rem; border-radius: 999px; background: transparent; border: 1px solid var(--line); color: var(--muted); cursor: pointer; opacity: 0; }
+.toggle:hover .try, .toggle .try:focus { opacity: 1; }
+@media (hover: none) { .toggle .try { opacity: 1; } }
 .bird { display: grid; justify-items: center; gap: 4px; }
 .bird canvas { width: min(100%, calc((100vh - 130px) * 1400 / 830)); aspect-ratio: 1400 / 830; border-radius: 14px; touch-action: none; display: block; cursor: pointer; }
 .bird p { margin: 0; }

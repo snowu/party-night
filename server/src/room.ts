@@ -6,7 +6,7 @@
 // The room is the authority for the shell: who is host (the earliest-joined human
 // still connected), the round rotation, points and awards. Each round's game
 // module decides that round's ranking; the room turns places into points.
-import { DEFAULT_GAMES, gameById } from '../../shared/catalog.ts';
+import { DEFAULT_GAMES, gameById, whyNot } from '../../shared/catalog.ts';
 import { isChaos, mulberry32, pointsFor } from '../../shared/points.ts';
 import {
   AVATARS, COLORS, HATS, MAX_BOTS, MAX_FRAME, MAX_PLAYERS, ROUND_CHOICES,
@@ -165,6 +165,19 @@ export class RoomCore {
         }
         break;
       }
+      case 'try': {
+        // Test one game fast: bots enough to play it, that game only, no intro.
+        const g = gameById(String(m.game));
+        if (this.phase !== 'lobby' || !g) return;
+        const want = Math.max(g.minPlayers, 4);
+        while (this.live().length < want && this.live().filter(p => p.bot).length < MAX_BOTS && this.players.size < MAX_PLAYERS) this.hostOp({ op: 'bot+' }, now);
+        const why = whyNot(g.id, this.live());
+        if (why) { this.event(`${g.title} ${why}`); return; }
+        this.settings = { rounds: ROUND_CHOICES[ROUND_CHOICES.length - 1], games: [g.id] };
+        this.hostOp({ op: 'start' }, now);
+        this.beginPlay(now);
+        break;
+      }
       case 'start':
         if (this.phase !== 'lobby') return;
         for (const p of this.players.values()) p.points = 0;
@@ -201,7 +214,7 @@ export class RoomCore {
   pickNext(): string {
     const bird = (g: string) => gameById(g)?.kind === 'bird';
     const ok = this.settings.games.filter(g => this.eligible(g));
-    const pool = ok.length ? ok : ['quiz'];
+    const pool = ok.length ? ok : ['quiz'];   // the lobby warns when nothing ticked can run
     const last = this.playlist[this.playlist.length - 1];
     const plays = (g: string) => this.playlist.filter(x => x === g).length;
     const leastPlayed = (xs: string[]) => {
@@ -224,17 +237,8 @@ export class RoomCore {
     return a;
   }
 
-  eligible(id: string): boolean {
-    const g = gameById(id);
-    if (!g) return false;
-    const live = [...this.players.values()].filter(p => p.bot || p.conns.size);
-    const humans = live.filter(p => !p.bot);
-    if (live.length < g.minPlayers || !humans.length) return false;
-    if (g.needs === 'artist') return live.length >= 2;
-    if (g.needs === 'artists') return humans.length >= 2;
-    if (g.needs === 'performer') return live.length >= 2 && humans.some(p => p.performer);
-    return true;
-  }
+  live() { return [...this.players.values()].filter(p => p.bot || p.conns.size); }
+  eligible(id: string) { return !whyNot(id, this.live()); }
 
   private advance(now: number) {
     this.game = null;

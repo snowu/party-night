@@ -196,6 +196,18 @@ for (const [label, games, rounds] of [
   check('3 humans make the hall of fame, bots excluded', !!hof && hof.podium.length === 3 && hof.podium.every((p: any) => p.name.length === 1));
 }
 
+// ▶ Try: one human alone gets bots and goes straight into that game.
+{
+  let t = 0;
+  const room = new RoomCore('TRYS', () => t, {}, mulberry32(8));
+  const a = client();
+  room.join(a.conn, { pid: 'a', name: 'A' });
+  room.message(a.conn, JSON.stringify({ t: 'host', op: 'try', game: 'pong' }));
+  check('try: straight into the game with bots', room.phase === 'play' && room.gameId === 'pong' && room.participants.length >= 4);
+  while (room.history.length < 2 && t < 600_000) { t += 250; room.tick(); if (room.phase === 'results') room.message(a.conn, JSON.stringify({ t: 'host', op: 'next' })); }
+  check('try: keeps playing that one game', room.history.length === 2 && room.history.every(o => o.game === 'pong'), room.history.map(o => o.game).join(','));
+}
+
 // Host handover: when the host leaves, the next human takes over.
 {
   const room = new RoomCore('HOST', () => 0);

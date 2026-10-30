@@ -161,6 +161,7 @@ document.addEventListener('click', e => {
     case 'performer': look('performer', (el as HTMLInputElement).checked); break;
     case 'copy': navigator.clipboard?.writeText(v).then(() => toast('🔗 Invite link copied')); break;
     case 'bot+': case 'bot-': case 'start': case 'next': case 'again': host(act); break;
+    case 'try': e.preventDefault(); host('try', { game: v }); break;
     case 'skip': if (confirm('Skip this round? Nobody scores.')) host('skip'); break;
     case 'end': if (confirm('End the night now and go to the podium?')) host('end'); break;
     case 'rounds': host('settings', { rounds: Number(v) }); break;
@@ -179,7 +180,12 @@ requestAnimationFrame(frame);
 
 // ── boot ──
 const code = (params.get('room') ?? '').toUpperCase();
-if (tv && /^[A-Z]{4}$/.test(code)) enter(code, '');
+const trying = params.get('try');
+if (trying) {
+  // ?try=pong: a fresh room with bots, straight into that game. Reload for another go.
+  enter(Array.from(crypto.getRandomValues(new Uint8Array(4)), x => CODE_ALPHABET[x % CODE_ALPHABET.length]).join(''), store('pn-name') || 'Tester');
+  const once = setInterval(() => { if (app.s?.phase === 'lobby' && app.isHost()) { app.net.host('try', { game: trying }); clearInterval(once); } }, 100);
+} else if (tv && /^[A-Z]{4}$/.test(code)) enter(code, '');
 else if (/^[A-Z]{4}$/.test(code) && store('pn-name') && params.get('auto') !== '0' && store('pn-room') === code) enter(code, store('pn-name'));
 else showLanding();
 window.addEventListener('beforeunload', () => { if (app?.s) store('pn-room', app.s.code); });

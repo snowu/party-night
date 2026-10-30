@@ -36,6 +36,8 @@ Each round is a random pick from the enabled games, with no repeats until they r
 | Ping Pong Royale | Everyone defends a slice of one round table. The server runs the physics; balls curve with spin, speed up and multiply. Each ball that gets past costs a life; last one standing wins. |
 | Trick Shot | One shot each on the same pool table, three tables (bumpers, trampoline rails, a bowling ball…). Balls potted score; sinking the white costs. Every shot is replayed side by side. |
 
+**Testing one game:** open `?try=<id>` (e.g. `?try=pong`, `?try=pool`) for a fresh room with bots that goes straight into that game, round after round; reload for a new room. In a lobby, the host can hover a game and hit **▶ Try** for the same thing. Ids are in `shared/catalog.ts`.
+
 The host is the earliest-joined human still connected. They can add bots, pick the number of rounds and switch games on or off. Share rooms with `?room=CODE`. Open `?room=CODE&tv=1` for the spectator screen to share on the call: live standings, and a camera that follows the race leader.
 
 ## Run it locally

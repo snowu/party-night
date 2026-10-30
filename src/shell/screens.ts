@@ -1,6 +1,6 @@
 // The between-rounds screens. Each returns HTML from the shell state; main.ts
 // patches it in and routes [data-act] clicks back here.
-import { CATALOG, gameById } from '../../shared/catalog.ts';
+import { CATALOG, gameById, whyNot } from '../../shared/catalog.ts';
 import { PLACE_POINTS } from '../../shared/points.ts';
 import { ordinal } from '../../shared/bird.ts';
 import { AVATARS, COLORS, HATS, ROUND_CHOICES, type RoundOutcome } from '../../shared/protocol.ts';
@@ -42,9 +42,17 @@ export function lobby(app: App) {
   const me = app.me ? app.player(app.me) : null;
   const host = app.isHost();
   const link = `${location.origin}${location.pathname}?room=${s.code}`;
-  const games = CATALOG.map(g => `<label class="toggle ${s.settings.games.includes(g.id) ? 'on' : ''}">
-      <input type="checkbox" data-act="game" data-v="${g.id}" ${s.settings.games.includes(g.id) ? 'checked' : ''} ${host ? '' : 'disabled'}>
-      <b>${g.kind === 'bird' ? '🐦' : '🎲'} ${esc(g.title)}</b><span class="muted">${esc(g.blurb)}</span></label>`).join('');
+  const live = s.players.filter(p => p.connected);
+  const ticked = s.settings.games;
+  const games = CATALOG.map(g => {
+    const why = whyNot(g.id, live);
+    return `<label class="toggle ${ticked.includes(g.id) ? 'on' : ''}">
+      <input type="checkbox" data-act="game" data-v="${g.id}" ${ticked.includes(g.id) ? 'checked' : ''} ${host ? '' : 'disabled'}>
+      <b>${g.kind === 'bird' ? '🐦' : '🎲'} ${esc(g.title)}</b><span class="muted">${esc(g.blurb)}</span>
+      ${why && ticked.includes(g.id) ? `<span class="why">⚠️ ${esc(why)}: skipped</span>` : ''}
+      ${host ? `<button class="try" data-act="try" data-v="${g.id}" title="Play just this game now, with bots">▶ Try</button>` : ''}</label>`;
+  }).join('');
+  const none = !ticked.some(g => !whyNot(g, live));
   return `<div class="lobby">
     <div class="joinbox card">
       <span class="muted">Room code</span>
@@ -69,6 +77,7 @@ export function lobby(app: App) {
       <div class="row"><span class="muted">Rounds</span>${ROUND_CHOICES.map(n => `<button class="pillbtn ${s.settings.rounds === n ? 'on' : ''}" data-act="rounds" data-v="${n}" ${host ? '' : 'disabled'}>${n}</button>`).join('')}</div>
       <p class="muted small">Each round is a random pick from the ticked games, with no repeats. Bird Race is never the first round. Points: ${PLACE_POINTS.join('/')} by place, ties share; every 4th round and the last are 🌪️ chaos rounds worth double.</p>
       <div class="games">${games}</div>
+      ${none ? '<p class="why center">⚠️ None of the ticked games can run with these players, so rounds fall back to Pop Quiz. Add a bot, or hit ▶ Try on a game.</p>' : ''}
       ${host ? `<button class="big wide" data-act="start">Start the night</button>` : `<p class="center muted">Waiting for ${esc(app.player(s.hostId)?.name ?? 'the host')} to start…</p>`}
     </div>
   </div>`;

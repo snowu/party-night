@@ -48,4 +48,17 @@ export const CATALOG: CatalogEntry[] = [
 ];
 
 export const gameById = (id: string) => CATALOG.find(g => g.id === id);
+
+// Whether a game can run with these players (the connected ones), and if not, why.
+export function whyNot(id: string, live: Array<{ bot: boolean; performer: boolean }>): string {
+  const g = gameById(id);
+  if (!g) return 'unknown game';
+  const humans = live.filter(p => !p.bot);
+  if (!humans.length) return 'needs a human';
+  if (live.length < g.minPlayers) return `needs ${g.minPlayers}+ players`;
+  if (g.needs === 'artist' && live.length < 2) return 'needs 2+ players';
+  if (g.needs === 'artists' && humans.length < 2) return 'needs 2+ humans';
+  if (g.needs === 'performer' && (live.length < 2 || !humans.some(p => p.performer))) return 'needs a 🎤 volunteer';
+  return '';
+}
 export const DEFAULT_GAMES = CATALOG.filter(g => !g.optIn).map(g => g.id);
