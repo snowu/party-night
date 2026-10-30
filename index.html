@@ -222,10 +222,20 @@ body.offline::after { content: "Reconnecting…"; position: fixed; top: 10px; le
 .gal-cap .voted { color: var(--green); font-weight: 800; }
 
 /* bird games */
-.hockey { display: grid; justify-items: center; gap: 6px; }
-.hockey-head { width: min(100%, 640px); }
-.hockey canvas { width: min(100%, calc(100vh - 170px)); aspect-ratio: 1; touch-action: none; display: block; cursor: none; }
-.hockey-foot { margin: 0; max-width: 640px; }
+.hockey { display: grid; justify-items: center; gap: 8px; }
+.hk-head { width: min(100%, 640px); }
+.hk-count, .hk-ot { font-family: Bungee, sans-serif; color: var(--yellow, #ffd23f); }
+.hk-vs { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.hk-score { font-family: Bungee, sans-serif; font-size: 1.6rem; margin-left: 6px; }
+.hk-big { height: min(68vh, 760px); max-width: 100%; aspect-ratio: 1.12 / 2.12; touch-action: none; display: block; border-radius: 14px; cursor: none; }
+.hk-big[hidden] { display: none; }
+.hk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; width: 100%; }
+.hk-grid:empty { display: none; }
+.hk-card { background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 6px; display: grid; gap: 6px; cursor: pointer; color: inherit; font: inherit; }
+.hk-card canvas { width: 100%; aspect-ratio: 1.12 / 2.12; border-radius: 8px; display: block; }
+.hk-cap { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; font-size: .85rem; }
+.hk-done { color: var(--green); font-weight: 700; }
+.hk-back { margin-left: 8px; }
 .pool { display: grid; gap: 8px; }
 .pool-table { width: min(100%, calc((100vh - 280px) * 2.14 / 1.14)); aspect-ratio: 2.14 / 1.14; margin: 0 auto; display: block; border-radius: 12px; touch-action: none; }
 .pool-table.aiming { cursor: crosshair; }

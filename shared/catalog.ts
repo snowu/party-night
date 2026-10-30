@@ -41,8 +41,8 @@ export const CATALOG: CatalogEntry[] = [
     how: 'If the pager is yours, tap a teammate to hand it over. Last ones standing win.' },
   { id: 'planning', kind: 'social', minPlayers: 1, title: 'Planning Poker', blurb: 'Estimate the number. Closest without going over wins.',
     how: 'Type your estimate. Anything over the real number is over budget and scores nothing.' },
-  { id: 'hockey', kind: 'social', minPlayers: 2, title: 'Air Hockey Royale', blurb: 'The office air hockey table, now round and for everyone. Guard your goal, smash the puck into theirs.',
-    how: 'Drag your mallet around your zone (or use the arrow keys) and swing into the puck: the harder the hit, the faster it flies. Each goal against you costs a life.' },
+  { id: 'hockey', kind: 'social', minPlayers: 2, title: 'Air Hockey Cup', blurb: 'The office air hockey table, knockout tournament. Quick 1v1 duels until one champion is left.',
+    how: 'Your goal is at the bottom: move your mallet with your finger or mouse (or the arrow keys). First to 3 wins the match. Knocked out? Watch the rest.' },
   { id: 'pool', kind: 'social', minPlayers: 1, title: 'Trick Shot', blurb: 'The break room pool table. Same layout for everyone, one shot each.',
     how: 'Drag back from anywhere and let go to shoot, like a slingshot. Each ball potted scores; sinking the white costs.' },
 ];

@@ -91,7 +91,7 @@ while (Date.now() - t0 < 8 * 60_000) {
           await p.mouse.move(fb.x + fb.width * 0.55, y + (Math.random() - 0.5) * 20, { steps: 5 });
           await p.mouse.up();
         }
-        const table = await p.$('.hockey canvas');
+        const table = await p.$('.hk-big:not([hidden])');
         const tb = table && await table.boundingBox();
         if (tb && tb.width > 0) await p.mouse.move(tb.x + tb.width * Math.random(), tb.y + tb.height * (0.6 + Math.random() * 0.3), { steps: 3 });
         const vote = await p.$('[data-vote]');

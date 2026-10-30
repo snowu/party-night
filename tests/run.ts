@@ -57,16 +57,48 @@ check('course length is sane', Math.abs(courseLength(30) - 30 * 60 * 4.3) < 30 *
   check('trick shot opens on the classic table', layouts[0].name === 'Break Room Classic' && new Set(layouts.map(L => L.name)).size === 3);
 }
 
-// Air Hockey Royale: with nobody moving, pucks still get through, and the round ends.
+// Air Hockey: a knockout. Five players means byes; nobody gets two.
 {
   let t = 0;
-  const players = ['a', 'b', 'c'].map(id => ({ id, name: id, bot: false, performer: false }));
+  const players = ['a', 'b', 'c', 'd', 'e'].map(id => ({ id, name: id, bot: true, performer: false }));
   const ctx: any = { rng: mulberry32(4), players, connected: () => true, changed() {}, event() {}, send() {}, toAll() {} };
   const g = new Hockey(ctx, t);
-  while (!g.result && t < 200_000) { t += 33; g.onTick(t); }
-  const lost = g.seats.reduce((n, s) => n + 3 - s.lives, 0);
-  check('hockey: parked mallets still let a goal in, and the round ends by the cap', !!g.result && t <= 3000 + 75_000 + 33 && lost >= 1 && g.result.ranking.length === 3, `${t}ms, ${lost} lost`);
-  check('hockey: pucks stay on the table', g.pucks.every(b => Math.sqrt(b.x * b.x + b.y * b.y) < 1.2));
+  const byes: string[] = [];
+  let stage = -1;
+  while (!g.result && t < 600_000) {
+    t += 33; g.onTick(t);
+    if (g.stage !== stage) { stage = g.stage; if (g.bye) byes.push(g.bye); }
+  }
+  check('hockey: a 5-player knockout finishes in 3 rounds', !!g.result && g.stages === 3 && stage === 2, `stages ${g.stages}, last ${stage}`);
+  check('hockey: one champion, everyone ranked', g.result?.ranking.length === 5 && g.result.ranking.filter(r => r.place === 1).length === 1);
+  check('hockey: nobody gets two byes', byes.length >= 2 && new Set(byes).size === byes.length, byes.join(','));
+}
+
+// Air Hockey hand-offs: a phone runs the puck in its half and passes it on; the
+// server runs a bot's half, and takes over from a phone that goes quiet.
+{
+  let t = 0;
+  const players = [{ id: 'h', name: 'H', bot: false, performer: false }, { id: 'b', name: 'B', bot: true, performer: false }];
+  const ctx: any = { rng: mulberry32(2), players, connected: () => true, changed() {}, event() {}, send() {}, toAll() {} };
+  const g = new Hockey(ctx, t);
+  while (g.phase !== 'play') { t += 33; g.onTick(t); }
+  const tb = g.tables[0], s = tb.sides.findIndex(x => x.id === 'h');
+  // Put the puck in the human's half, then have the human send it across.
+  tb.puck = { ...tb.puck, x: 0.5, y: s === 0 ? 1.3 : 0.7, vx: 0, vy: 0, at: t };
+  tb.ownSince = t;
+  g.onMessage('h', { k: 'p', x: 0.5, y: s === 0 ? 0.9 : 1.1, vx: 0, vy: s === 0 ? -1 : 1, at: t, n: tb.puck.n }, t);
+  t += 33; g.onTick(t);
+  const moved = s === 0 ? tb.puck.y < 0.9 : tb.puck.y > 1.1;
+  check('hockey: a phone hands the puck over and the server runs the bot half', moved, `y ${tb.puck.y}`);
+  // A stranger can't move a puck that isn't in their half.
+  const before = tb.puck.y;
+  g.onMessage('h', { k: 'p', x: 0.5, y: 0.3, vx: 0, vy: 0, at: t, n: tb.puck.n }, t);
+  check('hockey: only the half with the puck can move it', tb.puck.y === before);
+  // A quiet phone: puck parked in its half, moving; the server keeps it going.
+  tb.puck = { ...tb.puck, x: 0.5, y: s === 0 ? 1.5 : 0.5, vx: 0.8, vy: 0, at: t };
+  tb.ownSince = t;
+  for (let i = 0; i < 30; i++) { t += 33; g.onTick(t); }
+  check('hockey: the server takes over from a quiet phone', tb.winner >= 0 || Math.abs(tb.puck.x - 0.5) > 0.05, `x ${tb.puck.x}`);
 }
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -141,7 +173,7 @@ function runNight(games: string[], rounds: number, seed: number) {
         if (ans !== null) send(bob, { t: 'g', k: 'ans', i: v.stage, v: ans });
       }
       if (s.game.id === 'oncall' && v?.phase === 'live' && v.holder === 'bob') send(bob, { t: 'g', k: 'pass', to: 'alice' });
-      if (s.game.id === 'hockey') send(bob, { t: 'g', k: 'mallet', x: r() * 2 - 1, y: r() * 2 - 1 });
+      if (s.game.id === 'hockey') send(bob, { t: 'g', k: 'm', x: r(), y: r() * 2 });
       if ((s.game.id === 'draw' || s.game.id === 'perform') && v?.artist !== 'bob' && r() < 0.05) send(bob, { t: 'g', k: 'guess', text: 'banana' });
       if (s.game.id === 'gallery' && v?.step === 'draw') for (const c of [alice, bob]) send(c, { t: 'g', k: 'ink', id: `s${Math.floor(r() * 1e6)}`, c: '#111111', w: 10, pts: [r() * 1000, r() * 1000, 500, 500] });
       if (s.game.id === 'gallery' && v?.step === 'vote' && v.myVote === null) send(bob, { t: 'g', k: 'vote', slot: v.mySlot === 0 ? 1 : 0 });

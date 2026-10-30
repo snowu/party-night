@@ -33,7 +33,7 @@ Each round is a random pick from the enabled games, with no repeats until they r
 
 | Office perks | |
 |---|---|
-| Air Hockey Royale | Everyone guards a goal on the rim of one round table, with a mallet they drag around their own zone. The harder you swing into the puck, the faster it flies; more pucks join over time. Each goal against you costs a life; last one standing wins, goals scored break ties. |
+| Air Hockey Cup | A knockout tournament of quick 1v1 duels on a proper table, every match of a bracket round at once: first to 3, or most goals in 35s, then golden goal, then a coin. An odd one out gets a bye (never twice if it can be helped). Knocked-out players watch the other tables. |
 | Trick Shot | One shot each on the same pool table, three tables (bumpers, trampoline rails, a bowling ball…). Balls potted score; sinking the white costs. Every shot is replayed side by side. |
 
 **Testing one game:** open `?try=<id>` (e.g. `?try=hockey`, `?try=pool`) for a fresh room with bots that goes straight into that game, round after round; reload for a new room. In a lobby, the host can hover a game and hit **▶ Try** for the same thing. Ids are in `shared/catalog.ts`.
@@ -82,12 +82,12 @@ src/
   shell/           lobby, intro, results, podium, photo finish
   games/bird/      physics-core.ts (from LPB, unchanged), race-core.ts (pure), client.ts
   games/social/    staged rounds (views.ts), Draw It / Hum & Mime (guess.ts), Draw Off (gallery.ts)
-  games/perks/     Air Hockey Royale (hockey.ts), Trick Shot (pool.ts)
+  games/perks/     Air Hockey Cup (hockey.ts), Trick Shot (pool.ts)
 ```
 
 - **The room (a Durable Object, one per code, in memory) is the authority** for the shell and for each round's result. Social rounds run entirely on the server. Their bots answer from the server too.
 - **Bird rounds run in the browsers.** Each client flies the seeded course. The host's browser also flies the bots, on `setInterval` so they keep going in background tabs.
   - Positions go peer to peer over the room's relay: 50ms batches, a 400ms heartbeat, dead reckoning in between.
   - Each client reports distance and finish to the server twice a second, and the server decides who finished, who is out and when the round closes. There is no anti-cheat: it's a party game.
-- **Air Hockey Royale runs on the server.** A game can ask for a faster tick (`tickMs`); the room ticks every 33ms during air hockey instead of 250ms, steps the physics at 120Hz and sends snapshots at 20Hz. Phones send only where they want their mallet, and move their own mallet locally at the server's speed. A mallet counts as guarding the goal mouth if it was there in the last ~130ms, so lag goes the defender's way.
+- **Air Hockey: whoever's half the puck is in runs it.** That phone steps the shared physics (`shared/hockey.ts`) at 120Hz and sends the puck on every 33ms; when the puck crosses the centre line the other side takes over, so your own hits are instant. The server relays, keeps score, checks only the side with the puck moves it, and runs the puck itself for a bot's half or a phone that has gone quiet for 600ms. A game can ask for a faster tick (`tickMs`): the room ticks every 33ms during air hockey instead of 250ms.
 - **Trick Shot shares one deterministic sim** (`shared/pool.ts`: fixed steps, only `+ - * /` and `sqrt`). The server scores each shot with it; every screen replays the same shots from it, and `npm test` pins a golden replay.

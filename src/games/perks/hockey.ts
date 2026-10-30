@@ -1,37 +1,90 @@
-// Air Hockey Royale (client). The server runs the table (server/src/games/hockey.ts)
-// and sends snapshots at 20Hz; between them pucks are dead-reckoned. My own mallet
-// moves locally at the same speed the server moves it, so it never feels laggy;
-// everyone else's eases toward its last snapshot. The table is turned so my goal
-// is at the bottom, and the mallet follows my finger (or mouse) inside my zone.
-import { HOCKEY, approach, clampToZone, home, slice, type HockeyFrame, type HockeyView } from '../../../shared/hockey.ts';
-import { avatarSrc, timer, tickTimers, type App, type GameClient } from '../../app.ts';
-import { canPlay } from '../social/wrap.ts';
+// Air Hockey (client). A knockout of 1v1 duels (server/src/games/hockey.ts). On my
+// own table my mallet follows my pointer, and while the puck is in my half my
+// phone runs it (shared/hockey.ts), so my hits are instant; it hands the puck on
+// when it crosses the centre line. Everything else comes in snapshots ({t:'hk'})
+// and is dead-reckoned. Out, on a bye, or on the TV: a grid of every table; tap
+// one to watch it big.
+//
+// The puck runs on setInterval, not requestAnimationFrame, so it keeps going
+// (briefly) in a background tab; the server takes over if the phone goes quiet.
+import { HOCKEY, clampMallet, homeOf, moveMallet, sideOf, stepPuck, type HockeyFrame, type HockeyView, type Mallet, type Puck } from '../../../shared/hockey.ts';
+import { chip, countdown, esc, timer, tickTimers, type App, type GameClient } from '../../app.ts';
 
-const SEND_MS = 33;
-const KEY_SPEED = 1.6;          // table units a second with the arrow keys
-const EMOJI = '"Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+const RIM = 0.06;                // drawn rail, table units
+const MY_SPEED = 12;             // my mallet chases the pointer this fast (units/s)
+const KEY_SPEED = 1.8;
+const SIM_MS = 8;
 
-const imgs = new Map<string, HTMLImageElement>();
-function sprite(key: string) {
-  let i = imgs.get(key);
-  if (!i) { i = new Image(); i.src = avatarSrc(key); imgs.set(key, i); }
-  return i;
+type P = Puck & { at: number; n: number };
+const rowOf = (r: number[]) => ({ m: [{ x: r[0], y: r[1] }, { x: r[2], y: r[3] }], p: { x: r[4], y: r[5], vx: r[6], vy: r[7], at: r[8], n: r[9] } as P });
+
+// Where a puck is now, from a state a moment old: walls but no mallets.
+function ahead(p: P, now: number): Puck {
+  const q = { ...p };
+  const steps = Math.min(18, Math.max(0, Math.floor((now - p.at) / (HOCKEY.dt * 1000))));
+  for (let i = 0; i < steps; i++) if (stepPuck(q, []) >= 0) break;
+  return q;
 }
 
-type V = [number, number];
+function fit(cv: HTMLCanvasElement) {
+  const dpr = window.devicePixelRatio || 1, w = Math.round(cv.clientWidth * dpr);
+  if (w && cv.width !== w) { cv.width = w; cv.height = Math.round((w * (HOCKEY.L + 2 * RIM)) / (HOCKEY.W + 2 * RIM)); }
+  return cv.width / (HOCKEY.W + 2 * RIM);
+}
+
+// Draw a table. flip turns it round, so side 1 sees its own goal at the bottom.
+function drawTable(cv: HTMLCanvasElement, mallets: Array<{ x: number; y: number }>, puck: Puck | null, colors: string[], flip: boolean, me = -1) {
+  const g = cv.getContext('2d')!, S = fit(cv);
+  const X = (x: number) => ((flip ? HOCKEY.W - x : x) + RIM) * S, Y = (y: number) => ((flip ? HOCKEY.L - y : y) + RIM) * S;
+  const W = HOCKEY.W * S, L = HOCKEY.L * S;
+  g.fillStyle = '#5d6375'; g.fillRect(0, 0, cv.width, cv.height);
+  g.fillStyle = '#eef5fb'; g.fillRect(RIM * S, RIM * S, W, L);
+  g.save();
+  g.beginPath(); g.rect(RIM * S, RIM * S, W, L); g.clip();
+  g.strokeStyle = '#e5395b'; g.lineWidth = Math.max(2, S * 0.008);
+  g.beginPath(); g.moveTo(RIM * S, Y(HOCKEY.L / 2)); g.lineTo(RIM * S + W, Y(HOCKEY.L / 2)); g.stroke();
+  g.beginPath(); g.arc(X(HOCKEY.W / 2), Y(HOCKEY.L / 2), 0.15 * S, 0, Math.PI * 2); g.stroke();
+  // Goal creases, each in its owner's colour, then the goal mouths cut into the rail.
+  for (const s of [0, 1]) {
+    g.strokeStyle = colors[s]; g.lineWidth = Math.max(2, S * 0.008);
+    g.beginPath(); g.arc(X(HOCKEY.W / 2), Y(s === 0 ? HOCKEY.L : 0), 0.22 * S, 0, Math.PI * 2); g.stroke();
+  }
+  g.restore();
+  for (const s of [0, 1]) {
+    const yl = Y(s === 0 ? HOCKEY.L : 0), top = yl < cv.height / 2;
+    g.fillStyle = '#10131f';
+    g.fillRect(X(HOCKEY.W / 2) - (HOCKEY.goalW / 2) * S, top ? yl - RIM * S : yl, HOCKEY.goalW * S, RIM * S);
+  }
+  mallets.forEach((m, s) => {
+    const r = HOCKEY.malletR * S;
+    g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 8;
+    g.beginPath(); g.arc(X(m.x), Y(m.y), r, 0, Math.PI * 2); g.fillStyle = colors[s]; g.fill();
+    g.shadowBlur = 0;
+    g.beginPath(); g.arc(X(m.x), Y(m.y), r * 0.55, 0, Math.PI * 2); g.fillStyle = 'rgba(0,0,0,.2)'; g.fill();
+    g.beginPath(); g.arc(X(m.x), Y(m.y), r * 0.4, 0, Math.PI * 2); g.fillStyle = colors[s]; g.fill();
+    if (s === me) { g.beginPath(); g.arc(X(m.x), Y(m.y), r + 3, 0, Math.PI * 2); g.strokeStyle = '#10131f'; g.lineWidth = 2; g.stroke(); }
+  });
+  if (puck) {
+    g.shadowColor = 'rgba(0,0,0,.4)'; g.shadowBlur = 6;
+    g.beginPath(); g.arc(X(puck.x), Y(puck.y), HOCKEY.puckR * S, 0, Math.PI * 2); g.fillStyle = '#1b1f2e'; g.fill();
+    g.shadowBlur = 0;
+  }
+}
 
 export const hockeyGame = (): GameClient => {
-  let root: HTMLElement, app: App, canvas: HTMLCanvasElement, g: CanvasRenderingContext2D;
-  let raf = 0, lastT = 0, lastSent = 0, sent = '';
-  let frame: HockeyFrame | null = null;
-  let mine: V | null = null, target: V | null = null;
-  let rot = 0;
+  let root: HTMLElement, app: App, big: HTMLCanvasElement;
+  let raf = 0, sim = 0, lastSim = 0, lastSentM = 0, lastSentP = 0, sentM = '';
+  const frames: number[][] = [];
+  // My table.
+  let puck: P | null = null, owner = false, simAt = 0, myLastAt = 0;
+  let mine: Mallet | null = null, target: [number, number] | null = null;
+  const opp: Mallet = { x: 0, y: 0, vx: 0, vy: 0 };
+  let oppAt = 0;
   const keys = new Set<string>();
-  const shown: V[] = [];
+  // Watching.
+  let focus = -1, gridKey = '';
   const last: Record<string, string> = {};
   const gv = () => app.s.gv as HockeyView | null;
-  const seatIdx = () => gv()?.seats.findIndex(s => s.id === app.me) ?? -1;
-  const playing = () => { const v = gv(), i = seatIdx(); return !!v && i >= 0 && !v.seats[i].out && canPlay(app); };
 
   const set = (sel: string, html: string) => {
     if (last[sel] === html) return;
@@ -39,157 +92,183 @@ export const hockeyGame = (): GameClient => {
     const el = root.querySelector(sel);
     if (el) { el.innerHTML = html; tickTimers(app.now()); }
   };
+  const color = (id: string) => app.player(id)?.color ?? '#888';
+  const live = () => { const v = gv(); return !!v && v.phase === 'play' && !!v.me && app.now() >= v.startAt; };
 
-  // Screen → table: undo the scale and the turn that puts my goal at the bottom.
-  function onPointer(e: PointerEvent) {
-    const v = gv(), i = seatIdx();
-    if (!v || !playing()) return;
-    const r = canvas.getBoundingClientRect(), S = r.width * 0.4;
-    const sx = (e.clientX - r.left - r.width / 2) / S, sy = (e.clientY - r.top - r.height / 2) / S;
-    target = clampToZone(i, v.seats.length, sx * Math.cos(-rot) - sy * Math.sin(-rot), sx * Math.sin(-rot) + sy * Math.cos(-rot));
+  // ── my table: mallet, puck, hand-offs ──
+  function onFrame(f: HockeyFrame) {
+    frames.length = 0; frames.push(...f.T);
+    const v = gv();
+    if (!v?.me || !f.T[v.me.t]) return;
+    const { m, p } = rowOf(f.T[v.me.t]), s = v.me.s;
+    const o = m[1 - s];
+    moveMallet(opp, o.x, o.y, oppAt ? (f.at - oppAt) / 1000 : 0, 0.5);
+    oppAt = f.at;
+    if (!puck || p.n !== puck.n) {
+      // Puck down (start, or after a goal).
+      puck = { ...p }; owner = sideOf(p.y) === s; simAt = Math.max(p.at, app.now() - 200); myLastAt = 0;
+    } else if (!owner && p.at >= myLastAt) {
+      puck = { ...p };
+      if (sideOf(p.y) === s) { owner = true; simAt = Math.max(p.at, app.now() - 200); }
+    }
   }
-  const ARROWS: Record<string, V> = { ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0], ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1] };
+
+  function sendPuck(now: number) {
+    if (!puck) return;
+    lastSentP = now; myLastAt = Math.round(simAt);
+    app.net.game({ k: 'p', x: +puck.x.toFixed(4), y: +puck.y.toFixed(4), vx: +puck.vx.toFixed(4), vy: +puck.vy.toFixed(4), at: myLastAt, n: puck.n });
+  }
+
+  function tick() {
+    const v = gv(), now = app.now();
+    const dt = Math.min(0.1, (now - (lastSim || now)) / 1000);
+    lastSim = now;
+    if (!v?.me || v.phase === 'break') return;
+    const s = v.me.s;
+    if (!mine) { const [x, y] = homeOf(s); mine = { x, y, vx: 0, vy: 0 }; target = [x, y]; }
+    if (keys.size) {
+      let kx = 0, ky = 0;
+      for (const k of keys) { kx += ARROWS[k][0]; ky += ARROWS[k][1]; }
+      if (s === 1) { kx = -kx; ky = -ky; }
+      target = clampMallet(s, target![0] + kx * KEY_SPEED * dt, target![1] + ky * KEY_SPEED * dt);
+    }
+    const dx = target![0] - mine.x, dy = target![1] - mine.y, d = Math.sqrt(dx * dx + dy * dy), step = Math.min(d, MY_SPEED * dt);
+    moveMallet(mine, mine.x + (d ? (dx / d) * step : 0), mine.y + (d ? (dy / d) * step : 0), dt);
+    const key = `${mine.x.toFixed(3)},${mine.y.toFixed(3)}`;
+    if (now - lastSentM >= HOCKEY.sendMs && key !== sentM) {
+      lastSentM = now; sentM = key;
+      app.net.game({ k: 'm', x: +mine.x.toFixed(3), y: +mine.y.toFixed(3) });
+    }
+    if (!live()) { simAt = now; return; }   // nothing moves before the puck drops
+    if (!owner || !puck) return;
+    const mallets = s === 0 ? [mine, opp] : [opp, mine];
+    while (simAt + HOCKEY.dt * 1000 <= now) {
+      simAt += HOCKEY.dt * 1000;
+      const g = stepPuck(puck, mallets);
+      if (g === s) { owner = false; app.net.game({ k: 'goal', n: puck.n }); return; }
+      if (sideOf(puck.y) !== s) { owner = false; sendPuck(now); return; }
+    }
+    if (now - lastSentP >= HOCKEY.sendMs) sendPuck(now);
+  }
+
+  // Pointer → table units, undoing the turn for side 1.
+  function onPointer(e: PointerEvent) {
+    const v = gv();
+    if (!v?.me || !live() && v.phase !== 'count') return;
+    const r = big.getBoundingClientRect(), u = r.width / (HOCKEY.W + 2 * RIM);
+    let x = (e.clientX - r.left) / u - RIM, y = (e.clientY - r.top) / u - RIM;
+    if (v.me.s === 1) { x = HOCKEY.W - x; y = HOCKEY.L - y; }
+    target = clampMallet(v.me.s, x, y);
+  }
+  const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0], ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1] };
   const onKey = (e: KeyboardEvent) => {
-    if (!ARROWS[e.code] || !playing()) return;
+    if (!ARROWS[e.code] || !gv()?.me) return;
     e.preventDefault();
     if (e.type === 'keydown') keys.add(e.code); else keys.delete(e.code);
   };
+  const onClick = (e: Event) => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-table]');
+    if (!el) return;
+    focus = Number(el.dataset.table);
+    client.update(app);
+  };
 
-  function draw(t: number) {
+  // ── drawing ──
+  function draw() {
     raf = requestAnimationFrame(draw);
     const v = gv();
     if (!v) return;
-    const dt = Math.min(0.1, (t - (lastT || t)) / 1000);
-    lastT = t;
-    const n = v.seats.length, me = seatIdx(), now = app.now();
-    rot = Math.PI / 2 - slice(Math.max(0, me), n).mid;
-
-    if (me >= 0) {
-      mine ??= home(me, n);
-      target ??= mine;
-      if (keys.size && playing()) {
-        let kx = 0, ky = 0;
-        for (const k of keys) { kx += ARROWS[k][0]; ky += ARROWS[k][1]; }
-        // Keys are screen directions; turn them back onto the table.
-        const wx = kx * Math.cos(-rot) - ky * Math.sin(-rot), wy = kx * Math.sin(-rot) + ky * Math.cos(-rot);
-        target = clampToZone(me, n, target[0] + wx * KEY_SPEED * dt, target[1] + wy * KEY_SPEED * dt);
-      }
-      mine = approach(mine, target, dt);
-      const key = `${target[0].toFixed(3)},${target[1].toFixed(3)}`;
-      if (playing() && now - lastSent >= SEND_MS && key !== sent) {
-        lastSent = now; sent = key;
-        app.net.game({ k: 'mallet', x: Math.round(target[0] * 1000) / 1000, y: Math.round(target[1] * 1000) / 1000 });
-      }
+    const now = app.now();
+    if (v.me && frames[v.me.t]) {
+      const t = v.tables[v.me.t], s = v.me.s;
+      const ms = [0, 1].map(i => (i === s && mine ? mine : opp));
+      const p = puck ? (owner ? puck : ahead(puck, now)) : null;
+      drawTable(big, ms, p, t.ids.map(color), s === 1, s);
+    } else if (!big.hidden) {
+      const i = v.tables.length === 1 ? 0 : focus;
+      if (!frames[i]) return;
+      const { m, p } = rowOf(frames[i]);
+      drawTable(big, m, v.tables[i].winner >= 0 ? null : ahead(p, now), v.tables[i].ids.map(color), false);
     }
-
-    const css = canvas.clientWidth, dpr = window.devicePixelRatio || 1;
-    if (canvas.width !== Math.round(css * dpr)) { canvas.width = canvas.height = Math.round(css * dpr); }
-    const W = canvas.width, S = W * 0.4, c = W / 2;
-    const X = (x: number, y: number) => c + S * (x * Math.cos(rot) - y * Math.sin(rot));
-    const Y = (x: number, y: number) => c + S * (x * Math.sin(rot) + y * Math.cos(rot));
-    const arc = (r: number, a0: number, a1: number, color: string, width: number) => {
-      g.beginPath(); g.arc(c, c, r * S, a0 + rot, a1 + rot); g.strokeStyle = color; g.lineWidth = width * S; g.stroke();
-    };
-    const disc = (x: number, y: number, r: number, fill: string) => { g.beginPath(); g.arc(X(x, y), Y(x, y), r * S, 0, Math.PI * 2); g.fillStyle = fill; g.fill(); };
-
-    g.clearRect(0, 0, W, W);
-    // The table: ice-white surface, the neutral middle, and lines between zones.
-    g.beginPath(); g.arc(c, c, S, 0, Math.PI * 2); g.fillStyle = '#e9f3fb'; g.fill();
-    g.beginPath(); g.arc(c, c, HOCKEY.zoneIn * S, 0, Math.PI * 2); g.fillStyle = '#d6e6f3'; g.fill();
-    g.setLineDash([S * 0.02, S * 0.02]);
-    g.beginPath(); g.arc(c, c, HOCKEY.zoneIn * S, 0, Math.PI * 2); g.strokeStyle = '#9db6cc'; g.lineWidth = 2; g.stroke();
-    g.setLineDash([]);
-    const zi = HOCKEY.zoneIn;
-    for (let i = 0; i < n && n > 1; i++) {
-      const ux = Math.cos(slice(i, n).a0), uy = Math.sin(slice(i, n).a0);
-      g.beginPath(); g.moveTo(X(ux * zi, uy * zi), Y(ux * zi, uy * zi)); g.lineTo(X(ux, uy), Y(ux, uy));
-      g.strokeStyle = '#9db6cc'; g.lineWidth = 2; g.stroke();
-    }
-
-    v.seats.forEach((seat, i) => {
-      const s = slice(i, n), p = app.player(seat.id), col = p?.color ?? '#888';
-      if (seat.out) arc(1.02, s.a0, s.a1, '#5d6375', 0.05);
-      else {
-        // A wash of the owner's colour over their zone, walls either side of the goal.
-        g.beginPath(); g.arc(c, c, S, s.a0 + rot, s.a1 + rot); g.arc(c, c, HOCKEY.zoneIn * S, s.a1 + rot, s.a0 + rot, true); g.closePath();
-        g.fillStyle = col + (i === me ? '30' : '18'); g.fill();
-        arc(1.02, s.a0, s.g0, '#5d6375', 0.05);
-        arc(1.02, s.g1, s.a1, '#5d6375', 0.05);
-        arc(1.015, s.g0, s.g1, '#10131f', 0.04);
-        arc(0.995, s.g0, s.g1, col, 0.012);
-        // My mallet is local; everyone else's eases toward the last snapshot.
-        const fm = (frame?.m[i] as V | undefined) ?? home(i, n);
-        const prev = shown[i] ?? fm, k = Math.min(1, dt * 18);
-        shown[i] = i === me && mine ? mine : [prev[0] + (fm[0] - prev[0]) * k, prev[1] + (fm[1] - prev[1]) * k];
-        const [mx, my] = shown[i], mr = HOCKEY.malletR(n);
-        g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 8;
-        disc(mx, my, mr, col);
-        g.shadowBlur = 0;
-        disc(mx, my, mr * 0.62, 'rgba(0,0,0,.18)');
-        disc(mx, my, mr * 0.45, col);
-        if (i === me) { g.beginPath(); g.arc(X(mx, my), Y(mx, my), mr * S + 3, 0, Math.PI * 2); g.strokeStyle = '#fff'; g.lineWidth = 3; g.stroke(); }
-      }
-      // Avatar and lives just outside the rim.
-      const a = s.mid, ax = X(Math.cos(a) * 1.16, Math.sin(a) * 1.16), ay = Y(Math.cos(a) * 1.16, Math.sin(a) * 1.16);
-      const size = Math.min(S * 0.16, (S * 2.2 * Math.PI) / n * 0.5);
-      g.globalAlpha = seat.out ? 0.35 : 1;
-      g.beginPath(); g.arc(ax, ay, size / 2 + 3, 0, Math.PI * 2); g.fillStyle = col; g.fill();
-      if (p) g.drawImage(sprite(p.avatar), ax - size / 2, ay - size / 2, size, size);
-      g.globalAlpha = 1;
-      g.font = `${Math.round(size * 0.32)}px ${EMOJI}`;
-      g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(seat.out ? '💀' : '❤️'.repeat(seat.lives), ax, ay + size * 0.7);
+    root.querySelectorAll<HTMLCanvasElement>('.hk-card canvas').forEach(cv => {
+      const i = Number(cv.dataset.i), row = frames[i];
+      if (!row) return;
+      const { m, p } = rowOf(row);
+      drawTable(cv, m, v.tables[i]?.winner >= 0 ? null : ahead(p, now), v.tables[i].ids.map(color), false);
     });
-
-    if (frame) {
-      const ahead = Math.max(0, Math.min(0.12, (now - frame.at) / 1000));
-      for (const [x0, y0, vx, vy, big] of frame.b) {
-        let x = x0 + vx * ahead, y = y0 + vy * ahead;
-        const r = big ? HOCKEY.bigR : HOCKEY.puckR, d = Math.sqrt(x * x + y * y);
-        if (d > 1 - r) { x *= (1 - r) / d; y *= (1 - r) / d; }
-        g.shadowColor = 'rgba(0,0,0,.4)'; g.shadowBlur = 6;
-        disc(x, y, r, big ? '#ff8a3d' : '#1b1f2e');
-        g.shadowBlur = 0;
-        disc(x, y, r * 0.7, big ? '#ffb070' : '#2d3348');
-      }
-    }
-    if (now < v.startAt) {
-      g.font = `800 ${Math.round(S * 0.4)}px Bungee, sans-serif`;
-      g.fillStyle = '#1b1f2e';
-      g.fillText(String(Math.ceil((v.startAt - now) / 1000)), c, c);
-    }
   }
 
-  return {
+  const score = (t: HockeyView['tables'][number], a: number) => `${chip(app.player(t.ids[a]))}<b class="hk-score">${t.score[a]}</b>`;
+
+  const client: GameClient = {
     mount(r, a) {
       root = r; app = a;
       root.className = 'hockey';
-      root.innerHTML = `<div class="hockey-head"></div><canvas></canvas><p class="hockey-foot center muted"></p>`;
-      canvas = root.querySelector('canvas')!;
-      g = canvas.getContext('2d')!;
-      canvas.addEventListener('pointermove', onPointer);
-      canvas.addEventListener('pointerdown', onPointer);
+      root.innerHTML = `<div class="hk-head"></div><div class="hk-board"></div><canvas class="hk-big"></canvas><div class="hk-grid"></div><div class="hk-foot"></div>`;
+      big = root.querySelector('.hk-big')!;
+      big.addEventListener('pointermove', onPointer);
+      big.addEventListener('pointerdown', onPointer);
+      root.addEventListener('click', onClick);
       window.addEventListener('keydown', onKey);
       window.addEventListener('keyup', onKey);
       raf = requestAnimationFrame(draw);
+      sim = window.setInterval(tick, SIM_MS);
       this.update(a);
     },
     update(a) {
       app = a;
       const v = gv();
       if (!v) return;
-      const seat = v.seats[seatIdx()];
-      set('.hockey-head', timer(v.endAt, HOCKEY.capMs));
-      set('.hockey-foot', !seat || !canPlay(app) ? `${v.seats.filter(s => !s.out).length} still at the table`
-        : seat.out ? '🥅 You\'re out. Enjoy the view.'
-        : 'Your goal is at the bottom. Drag your mallet around your zone (or use the arrow keys) and swing into the puck.');
+      const now = app.now();
+      // A new bracket round: fresh table, fresh grid.
+      const key = `${v.stage}`;
+      if (key !== gridKey) { gridKey = key; focus = -1; puck = null; owner = false; mine = null; oppAt = 0; frames.length = 0; }
+      const clock = v.phase === 'count' ? `<span class="hk-count">Puck drop in ${countdown(v.startAt)}</span>`
+        : v.phase === 'break' ? `<span class="muted">Next round in ${countdown(v.nextAt)}</span>`
+        : now < v.endAt ? timer(v.endAt, HOCKEY.matchMs) : '<span class="hk-ot">⚡ Golden goal</span>';
+      const where = v.label.startsWith('Round') ? `Round ${v.stage + 1} of ${v.stages}` : v.label;
+      set('.hk-head', `<div class="stagehead"><span class="muted">🏒 ${esc(where)}</span>${clock}</div>`);
+      const mt = v.me ? v.tables[v.me.t] : null;
+      // With one table left (the final), everyone watching gets it big.
+      const only = v.tables.length === 1 && !mt;
+      const shown = only ? 0 : focus;
+      const watching = !mt && shown >= 0 && v.tables[shown];
+      big.hidden = !mt && !watching;
+      // My scoreboard (opponent first: they're at the top of my table).
+      set('.hk-board', mt ? `<div class="hk-vs">${score(mt, 1 - v.me!.s)}<span class="muted">vs</span>${score(mt, v.me!.s)}</div>`
+        : watching ? `<div class="hk-vs">${score(v.tables[shown], 1)}<span class="muted">vs</span>${score(v.tables[shown], 0)}</div>${only ? '' : '<button class="ghost hk-back" data-table="-1">← All tables</button>'}` : '');
+      // The grid: every table, when I'm not playing and not watching one big.
+      const showGrid = !mt && !watching;
+      const gk = showGrid ? `${v.stage}:${v.tables.length}` : '';
+      const grid = root.querySelector<HTMLElement>('.hk-grid')!;
+      if (grid.dataset.k !== gk) {
+        grid.dataset.k = gk;
+        grid.innerHTML = showGrid ? v.tables.map((_, i) => `<button class="hk-card" data-table="${i}"><canvas data-i="${i}"></canvas><div class="hk-cap"></div></button>`).join('') : '';
+      }
+      v.tables.forEach((t, i) => {
+        const cap = grid.querySelector(`[data-table="${i}"] .hk-cap`);
+        const html = `${chip(app.player(t.ids[0]))}<b>${t.score[0]}–${t.score[1]}</b>${chip(app.player(t.ids[1]))}${t.winner >= 0 ? `<span class="hk-done">${t.coin ? '🪙' : '✅'} ${esc(app.player(t.ids[t.winner])?.name)}</span>` : t.ot ? '<span class="hk-ot">⚡</span>' : ''}`;
+        if (cap && cap.innerHTML !== html) cap.innerHTML = html;
+      });
+      const meId = app.me ?? '';
+      const lost = !!app.me && app.s.participants.includes(meId) && !v.alive.includes(meId);
+      const foot = mt ? `<p class="center muted">Your goal is at the bottom. Move with your finger or mouse (or the arrow keys) and hit the puck into the top goal. First to ${HOCKEY.firstTo}.</p>`
+        : v.bye === meId ? '<p class="center">🎟️ You have a bye this round. Watch the others, tap a table to watch it big.</p>'
+        : lost ? '<p class="center muted">You\'re out. Tap a table to watch it big.</p>'
+        : v.alive.includes(meId) && v.phase === 'play' ? '<p class="center">✅ You\'re through to the next round. Tap a table to watch it big.</p>'
+        : v.phase === 'break' ? `<p class="center muted">${v.alive.length} still in.</p>`
+        : '<p class="center muted">Tap a table to watch it big.</p>';
+      set('.hk-foot', foot);
     },
-    raw(m) { if (m.t === 'hockey') frame = m; },
+    raw(m) { if (m.t === 'hk') onFrame(m); },
     unmount() {
       cancelAnimationFrame(raf);
+      clearInterval(sim);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKey);
+      root.removeEventListener('click', onClick);
       root.innerHTML = '';
     },
   };
+  return client;
 };

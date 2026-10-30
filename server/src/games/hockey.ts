@@ -1,297 +1,250 @@
-// Air Hockey Royale: everyone guards a goal on the rim of one round table, with a
-// mallet they drag anywhere in their own zone. The server runs the physics (fixed
-// 120Hz steps) and sends snapshots at 20Hz; phones only send where they want their
-// mallet. The puck takes its speed from how hard the mallet hits it. A puck in your
-// goal costs a life; last one standing wins, and goals scored break ties.
+// Air Hockey: a knockout tournament of quick 1v1 duels, every match of a bracket
+// round at once. First to 3, or the most goals after 35s; a draw goes to golden
+// goal, then a coin. An odd one out gets a bye (never the same person twice if
+// it can be helped). Knocked-out players watch the tables still going.
 //
-// Lag: a phone is 50-150ms behind, so a mallet counts as guarding the goal mouth
-// if it was there in any of the last few samples. Close calls go to the defender.
-import { HOCKEY, angDiff, approach, clampToZone, home, normAng, slice, type HockeySeat, type HockeyView } from '../../../shared/hockey.ts';
+// The puck is run by whoever's half it's in (shared/hockey.ts): the phones send
+// it on, the server relays it, keeps score, and runs it itself for a bot's half
+// or for a phone that has gone quiet.
+import { HOCKEY, clampMallet, homeOf, moveMallet, sideOf, stageLabel, stepPuck, type HockeyView, type Mallet, type Phase, type Puck } from '../../../shared/hockey.ts';
 import { placesByScore } from '../../../shared/points.ts';
 import type { Award } from '../../../shared/protocol.ts';
-import { mostAward, pick, type GameCtx, type RoundResult, type ServerGame } from './types.ts';
+import { mostAward, pick, shuffle, type GameCtx, type RoundResult, type ServerGame } from './types.ts';
 
-const DT = 1 / 120, STEP_MS = 1000 / 120;
-const SERVE = 0.6, MIN_SPEED = 0.3, MAX_SPEED = 2.6;
-const GLIDE = 0.2;               // share of speed lost per second: it's an air table
-const HIT = 0.9;                 // how much of a hit the puck keeps (1 = perfectly bouncy)
-const SWING_MAX = 2.5;           // a mallet never hits harder than this (table units a second)
-const SWING_SMOOTH = 0.12;       // share of each step's movement that counts toward the swing
-const BALL_EVERY_MS = 8000, MAX_PUCKS = 6, RESPAWN_MS = 1000;
-const HISTORY = 4;               // mallet samples kept (~130ms at 33ms ticks)
-const RAIL = 0.9;                // share of speed a puck keeps off the rail
-const MIN_INWARD = 0.05;         // …and at least this much of it heads back in, so nothing hugs the rim forever
-const SQUIRT = 1.2;              // top speed of a puck squeezed out between a mallet and the rail
-const BOT_SPEED = 3.2;           // bots' mallets are slower than a hand, by design
-const KMH = 40;                  // table units a second → km/h, for the Slapshot award
+const QUIET_MS = 600;            // a phone that owns the puck but hasn't sent it this long: the server takes over
+const CATCH_UP_MS = 500;
 
-type V = [number, number];
-interface Puck { x: number; y: number; vx: number; vy: number; r: number; big: boolean; last: string; miss: boolean }
-interface Seat extends HockeySeat {
-  m: V; target: V; vel: V; hist: V[];
-  blocks: number; slap: number;
-  bot: { skill: number; nextAt: number } | null;
+interface Side { id: string; m: Mallet; target: [number, number]; lastM: number; lastP: number; skill: number; nextAim: number }
+interface Table {
+  sides: [Side, Side];
+  score: [number, number];
+  puck: Puck & { at: number; n: number };
+  ownSince: number;
+  ot: boolean;
+  winner: number;
+  coin: boolean;
 }
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
-const len = (x: number, y: number) => Math.sqrt(x * x + y * y);
+const num = (v: unknown, lo: number, hi: number) => Math.max(lo, Math.min(hi, Number(v) || 0));
 
 export class Hockey implements ServerGame {
   result: RoundResult | null = null;
   tickMs = HOCKEY.tickMs;
-  startAt: number;
-  endAt: number;
-  simAt: number;
-  n: number;
-  mr: number;
-  seats: Seat[];
-  pucks: Puck[] = [];
-  nextPuckAt: number;
-  lastFrame = 0;
+  phase: Phase = 'count';
+  stage = -1;
+  stages: number;
+  alive: string[];
+  out = new Map<string, number>();           // id → bracket round they went out in
+  byes = new Set<string>();
+  bye: string | null = null;
+  tables: Table[] = [];
+  startAt = 0;
+  endAt = 0;
+  nextAt = 0;
+  gf = new Map<string, number>();
+  ga = new Map<string, number>();
+  cleanSheets = new Map<string, number>();
+  golden = new Map<string, number>();
+  skill = new Map<string, number>();
 
   constructor(public ctx: GameCtx, now: number) {
-    this.startAt = now + HOCKEY.countdownMs;
-    this.endAt = this.startAt + HOCKEY.capMs;
-    this.simAt = this.startAt;
-    this.nextPuckAt = this.startAt;
-    this.n = ctx.players.length;
-    this.mr = HOCKEY.malletR(this.n);
-    this.seats = ctx.players.map((p, i) => ({
-      id: p.id, lives: HOCKEY.lives(this.n), out: 0, goals: 0, blocks: 0, slap: 0,
-      m: home(i, this.n), target: home(i, this.n), vel: [0, 0], hist: [],
-      bot: p.bot ? { skill: 0.25 + ctx.rng() * 0.5, nextAt: 0 } : null,
-    }));
+    this.alive = ctx.players.map(p => p.id);
+    this.stages = Math.max(1, Math.ceil(Math.log2(this.alive.length)));
+    for (const p of ctx.players) if (p.bot) this.skill.set(p.id, 0.3 + ctx.rng() * 0.5);
+    this.nextStage(now);
   }
 
   name(id: string) { return this.ctx.players.find(p => p.id === id)?.name ?? '?'; }
-  alive() { return this.seats.filter(s => !s.out); }
+  isBot(id: string) { return !!this.ctx.players.find(p => p.id === id)?.bot; }
+  add(m: Map<string, number>, id: string, n = 1) { m.set(id, (m.get(id) ?? 0) + n); }
 
-  onMessage(from: string, msg: any) {
-    const i = this.seats.findIndex(x => x.id === from), s = this.seats[i];
-    if (msg?.k !== 'mallet' || !s || s.bot) return;
-    const x = Number(msg.x), y = Number(msg.y);
-    if (Number.isFinite(x) && Number.isFinite(y)) s.target = clampToZone(i, this.n, x, y);
-  }
-
-  onTick(now: number) {
-    if (this.result || now < this.startAt) return;
-    this.seats.forEach((s, i) => {
-      s.hist.unshift([s.m[0], s.m[1]]);
-      s.hist.length = Math.min(s.hist.length, HISTORY);
-      if (s.bot && !s.out) this.aimBot(s, i, now);
-    });
-    // Catch up in fixed steps; a stalled tick never fast-forwards more than half a second.
-    this.simAt = Math.max(this.simAt, now - 500);
-    while (this.simAt + STEP_MS <= now && !this.result) {
-      this.simAt += STEP_MS;
-      this.step(this.simAt);
-    }
-    const wanted = Math.min(MAX_PUCKS, Math.ceil(this.alive().length * 0.6), 1 + Math.floor((now - this.startAt) / BALL_EVERY_MS));
-    if (this.pucks.length < wanted && now >= this.nextPuckAt) { this.serve(); this.nextPuckAt = now + 600; }
-    if (now >= this.endAt || this.alive().length <= (this.n > 1 ? 1 : 0)) return this.finish();
-    if (now - this.lastFrame >= HOCKEY.frameMs) {
-      this.lastFrame = now;
-      this.ctx.toAll({
-        t: 'hockey', at: now,
-        b: this.pucks.map(b => [r3(b.x), r3(b.y), r3(b.vx), r3(b.vy), b.big ? 1 : 0]),
-        m: this.seats.map(s => [r3(s.m[0]), r3(s.m[1])]),
-      });
-    }
-  }
-
-  // A new puck from the middle, sent at a wall between two goals, so nobody
-  // loses a life to a serve they never touched.
-  serve() {
+  // Pair up whoever is still in; an odd one out goes straight through.
+  nextStage(now: number) {
+    this.stage++;
     const rng = this.ctx.rng;
-    const a = slice(this.seats.indexOf(pick(rng, this.alive())), this.n).a0 + (rng() - 0.5) * 0.3;
-    const big = rng() < 0.2;
-    this.pucks.push({ x: 0, y: 0, vx: Math.cos(a) * SERVE, vy: Math.sin(a) * SERVE, r: big ? HOCKEY.bigR : HOCKEY.puckR, big, last: '', miss: false });
-  }
-
-  step(now: number) {
-    for (const s of this.seats) {
-      if (s.out) continue;
-      const before = s.m;
-      s.m = approach(s.m, s.target, DT, s.bot ? BOT_SPEED * (0.45 + 0.45 * s.bot.skill) : HOCKEY.malletSpeed);
-      // The swing is the hand's speed, not the mallet's: positions arrive in 33ms
-      // jumps the mallet covers in a blink, so smooth over ~70ms and cap it.
-      const vx = s.vel[0] + ((s.m[0] - before[0]) / DT - s.vel[0]) * SWING_SMOOTH;
-      const vy = s.vel[1] + ((s.m[1] - before[1]) / DT - s.vel[1]) * SWING_SMOOTH;
-      const sp = len(vx, vy), k = sp > SWING_MAX ? SWING_MAX / sp : 1;
-      s.vel = [vx * k, vy * k];
+    let pool = shuffle(rng, this.alive);
+    this.bye = null;
+    if (pool.length % 2) {
+      const fresh = pool.filter(id => !this.byes.has(id));
+      this.bye = pick(rng, fresh.length ? fresh : pool);
+      this.byes.add(this.bye);
+      pool = pool.filter(id => id !== this.bye);
     }
-    for (const b of this.pucks) {
-      // Air table: barely any friction, and a puck never quite stops.
-      const sp = len(b.vx, b.vy), next = Math.max(MIN_SPEED, sp * (1 - GLIDE * DT));
-      if (sp > 0) { b.vx *= next / sp; b.vy *= next / sp; }
-      b.x += b.vx * DT; b.y += b.vy * DT;
+    this.phase = 'count';
+    this.startAt = now + HOCKEY.countdownMs;
+    this.endAt = this.startAt + HOCKEY.matchMs;
+    this.tables = [];
+    const side = (id: string, s: number): Side => {
+      const [x, y] = homeOf(s);
+      return { id, m: { x, y, vx: 0, vy: 0 }, target: [x, y], lastM: now, lastP: 0, skill: this.skill.get(id) ?? 0.5, nextAim: 0 };
+    };
+    for (let i = 0; i + 1 < pool.length; i += 2) {
+      const t: Table = { sides: [side(pool[i], 0), side(pool[i + 1], 1)], score: [0, 0], puck: { x: 0, y: 0, vx: 0, vy: 0, at: now, n: 0 }, ownSince: now, ot: false, winner: -1, coin: false };
+      this.drop(t, rng() < 0.5 ? 0 : 1, now);
+      this.tables.push(t);
     }
-    this.collidePucks();
-    for (const b of this.pucks) this.seats.forEach(s => { if (!s.out) this.mallet(b, s, s.m, s.vel); });
-    for (const b of [...this.pucks]) this.rim(b, now);
-  }
-
-  collidePucks() {
-    const bs = this.pucks;
-    for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) {
-      const a = bs[i], b = bs[j];
-      const dx = b.x - a.x, dy = b.y - a.y, d = len(dx, dy), min = a.r + b.r;
-      if (d >= min || d === 0) continue;
-      const nx = dx / d, ny = dy / d, rel = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
-      if (rel > 0) { a.vx -= rel * nx; a.vy -= rel * ny; b.vx += rel * nx; b.vy += rel * ny; }
-      const push = (min - d) / 2;
-      a.x -= nx * push; a.y -= ny * push; b.x += nx * push; b.y += ny * push;
-    }
-  }
-
-  // Puck on mallet: the mallet doesn't give, so the puck bounces off it and picks
-  // up the mallet's own speed. Returns whether they touched.
-  mallet(b: Puck, s: Seat, m: V, vel: V): boolean {
-    const dx = b.x - m[0], dy = b.y - m[1], d = len(dx, dy), min = b.r + this.mr;
-    if (d >= min || d === 0) return false;
-    const nx = dx / d, ny = dy / d;
-    const rel = (b.vx - vel[0]) * nx + (b.vy - vel[1]) * ny;
-    if (rel < 0) {
-      const outward = b.x * b.vx + b.y * b.vy > 0;   // was heading for the rim
-      b.vx -= (1 + HIT) * rel * nx; b.vy -= (1 + HIT) * rel * ny;
-      const sp = len(b.vx, b.vy);
-      if (sp > MAX_SPEED) { b.vx *= MAX_SPEED / sp; b.vy *= MAX_SPEED / sp; }
-      s.slap = Math.max(s.slap, Math.min(sp, MAX_SPEED));
-      if (outward) s.blocks++;
-      b.last = s.id;
-    }
-    b.x = m[0] + nx * min; b.y = m[1] + ny * min;
-    return true;
-  }
-
-  rim(b: Puck, now: number) {
-    const d = len(b.x, b.y);
-    if (d + b.r < 0.99) { b.miss = false; return; }
-    if (d + b.r < 1) return;
-    const nx = b.x / d, ny = b.y / d;
-    const a = normAng(Math.atan2(b.y, b.x));
-    const i = Math.min(this.n - 1, Math.floor(a / ((Math.PI * 2) / this.n)));
-    const seat = this.seats[i], sl = slice(i, this.n);
-    const mouth = !seat.out && a >= sl.g0 && a <= sl.g1;
-    const outward = b.vx * nx + b.vy * ny > 0;
-    if (!mouth) {
-      if (outward) this.bounce(b, nx, ny, seat.out ? 1.12 : RAIL);
-      b.x = nx * (1 - b.r); b.y = ny * (1 - b.r);
-      this.squeeze(b, nx, ny);
-      return;
-    }
-    if (!b.miss && outward) {
-      // The defender's benefit of the doubt: was their mallet here a moment ago?
-      if (!seat.bot && seat.hist.some(m => this.mallet(b, seat, m, [0, 0]))) return;
-      b.miss = true;
-    }
-    if (d - b.r > 1) this.goal(b, seat, now);
-  }
-
-  // A mirror bounce off the rail, a little slower. Only a puck skimming the rim
-  // almost flat gets nudged back in, so it can't circle the table forever.
-  bounce(b: Puck, nx: number, ny: number, e: number) {
-    const vn = b.vx * nx + b.vy * ny;
-    b.vx = (b.vx - 2 * vn * nx) * e; b.vy = (b.vy - 2 * vn * ny) * e;
-    const sp = len(b.vx, b.vy), inward = -(b.vx * nx + b.vy * ny);
-    if (inward < MIN_INWARD * sp) {
-      const tx = b.vx + inward * nx, ty = b.vy + inward * ny, tl = len(tx, ty) || 1;
-      const keep = Math.sqrt(sp * sp * (1 - MIN_INWARD * MIN_INWARD));
-      b.vx = (tx / tl) * keep - nx * MIN_INWARD * sp; b.vy = (ty / tl) * keep - ny * MIN_INWARD * sp;
-    }
-    const k = Math.min(1, MAX_SPEED / (sp || 1));
-    b.vx *= k; b.vy *= k;
-  }
-
-  // A puck pinned between a mallet and the rail squirts out sideways along the
-  // rail, instead of being bounced back and forth between them.
-  squeeze(b: Puck, nx: number, ny: number) {
-    const min = b.r + this.mr;
-    for (const s of this.seats) {
-      if (s.out || len(b.x - s.m[0], b.y - s.m[1]) >= min) continue;
-      const tx = -ny, ty = nx, side = (b.x - s.m[0]) * tx + (b.y - s.m[1]) * ty >= 0 ? 1 : -1;
-      const R = 1 - b.r;
-      let a = Math.atan2(b.y, b.x);
-      for (let k = 0; k < 80 && len(b.x - s.m[0], b.y - s.m[1]) < min; k++) {
-        a += side * 0.01;
-        b.x = Math.cos(a) * R; b.y = Math.sin(a) * R;
-      }
-      const sp = Math.min(SQUIRT, Math.max(0.5, len(b.vx, b.vy)));
-      b.vx = -Math.sin(a) * side * sp; b.vy = Math.cos(a) * side * sp;
-      b.last = s.id;
-    }
-  }
-
-  goal(b: Puck, seat: Seat, now: number) {
-    this.pucks = this.pucks.filter(x => x !== b);
-    this.nextPuckAt = Math.max(this.nextPuckAt, now + RESPAWN_MS);
-    seat.lives--;
-    const by = this.seats.find(s => s.id === b.last && s !== seat);
-    if (by) by.goals++;
-    if (seat.lives <= 0) {
-      seat.out = Math.max(1, Math.round(now - this.startAt));
-      this.ctx.event(`🥅 ${this.name(seat.id)} is out${by ? `, courtesy of ${this.name(by.id)}` : ''}`);
-    } else this.ctx.send(seat.id, { t: 'event', text: `💔 ${seat.lives} ${seat.lives === 1 ? 'life' : 'lives'} left` });
+    if (this.bye) this.ctx.event(`🎟️ ${this.name(this.bye)} gets a bye`);
     this.ctx.changed();
   }
 
-  // Bots: if a puck is in their zone and they're between it and their goal, they
-  // go through it; otherwise they get between their goal and the biggest threat.
-  // A little off and a little late, depending on skill.
-  aimBot(s: Seat, i: number, now: number) {
-    const bot = s.bot!;
-    if (now < bot.nextAt) return;
-    bot.nextAt = now + 90 + this.ctx.rng() * 260 * (1.2 - bot.skill);
-    if (this.ctx.rng() < 0.15) return;   // distracted
-    const sl = slice(i, this.n), gx = Math.cos(sl.mid), gy = Math.sin(sl.mid);
-    const inZone = (b: Puck) => len(b.x, b.y) > HOCKEY.zoneIn && Math.abs(angDiff(Math.atan2(b.y, b.x), sl.mid)) < (sl.a1 - sl.a0) / 2;
-    const err = () => (this.ctx.rng() - 0.5) * 0.25 * (1.1 - bot.skill);
-    const mine = this.pucks.filter(inZone).sort((a, b) => len(a.x - gx, a.y - gy) - len(b.x - gx, b.y - gy))[0];
-    if (mine) {
-      const behind = len(s.m[0] - gx, s.m[1] - gy) < len(mine.x - gx, mine.y - gy);
-      // Strike through the puck, away from the goal; or circle back behind it.
-      const ux = mine.x - gx, uy = mine.y - gy, ul = len(ux, uy) || 1;
-      s.target = behind
-        ? clampToZone(i, this.n, mine.x + (ux / ul) * 0.15 + err(), mine.y + (uy / ul) * 0.15 + err())
-        : clampToZone(i, this.n, mine.x - (ux / ul) * 0.2 + err(), mine.y - (uy / ul) * 0.2 + err());
+  // Puck down in one side's half, still.
+  drop(t: Table, side: number, now: number) {
+    t.puck = { x: HOCKEY.W / 2, y: side === 0 ? 1.35 : 0.65, vx: 0, vy: 0, at: now, n: t.puck.n + 1 };
+    t.ownSince = now;
+  }
+
+  where(id: string): { t: Table; s: number } | null {
+    for (const t of this.tables) for (const s of [0, 1]) if (t.sides[s].id === id && t.winner < 0) return { t, s };
+    return null;
+  }
+
+  // Does the server run this side's half (a bot, or a phone that isn't sending)?
+  serverRuns(t: Table, s: number, now: number) {
+    const side = t.sides[s];
+    return this.isBot(side.id) || !this.ctx.connected(side.id) || now - Math.max(t.ownSince, side.lastP) > QUIET_MS;
+  }
+
+  onMessage(from: string, msg: any, now: number) {
+    const w = this.phase === 'break' ? null : this.where(from);
+    if (!w) return;
+    const { t, s } = w, side = t.sides[s], p = t.puck;
+    if (msg?.k === 'm') {
+      const [x, y] = clampMallet(s, Number(msg.x) || 0, Number(msg.y) || 0);
+      moveMallet(side.m, x, y, (now - side.lastM) / 1000, 0.5);
+      side.lastM = now;
       return;
     }
-    let best: { t: number; a: number } | null = null;
-    for (const b of this.pucks) {
-      const R = 1 - b.r, pv = b.x * b.vx + b.y * b.vy, vv = b.vx * b.vx + b.vy * b.vy;
-      const disc = pv * pv - vv * (b.x * b.x + b.y * b.y - R * R);
-      if (vv === 0 || disc < 0) continue;
-      const t = (-pv + Math.sqrt(disc)) / vv;
-      const a = Math.atan2(b.y + b.vy * t, b.x + b.vx * t);
-      if (Math.abs(angDiff(a, sl.mid)) > (sl.a1 - sl.a0) / 2 || (best && best.t < t)) continue;
-      best = { t, a };
+    // Only whoever has the puck may move it on, and never with a state from before a goal.
+    if (this.phase !== 'play' || msg?.n !== p.n || sideOf(p.y) !== s) return;
+    if (msg.k === 'p') {
+      const at = Math.min(now, Number(msg.at) || 0);
+      if (at < p.at) return;
+      const was = sideOf(p.y);
+      t.puck = { x: num(msg.x, -0.2, HOCKEY.W + 0.2), y: num(msg.y, -0.2, HOCKEY.L + 0.2), vx: num(msg.vx, -HOCKEY.maxPuck, HOCKEY.maxPuck), vy: num(msg.vy, -HOCKEY.maxPuck, HOCKEY.maxPuck), at, n: p.n };
+      side.lastP = now;
+      if (sideOf(t.puck.y) !== was) t.ownSince = now;
+    } else if (msg.k === 'goal') this.concede(t, s, now);
+  }
+
+  concede(t: Table, s: number, now: number) {
+    const scorer = 1 - s, ids = t.sides.map(x => x.id);
+    t.score[scorer]++;
+    this.add(this.gf, ids[scorer]);
+    this.add(this.ga, ids[s]);
+    for (const id of ids) if (!this.isBot(id)) this.ctx.send(id, { t: 'event', text: `🥅 ${this.name(ids[scorer])} scores · ${t.score[0]}–${t.score[1]}` });
+    if (t.ot) this.add(this.golden, ids[scorer]);
+    if (t.ot || t.score[scorer] >= HOCKEY.firstTo) this.win(t, scorer);
+    else this.drop(t, s, now);
+    this.ctx.changed();
+  }
+
+  win(t: Table, side: number, coin = false) {
+    t.winner = side;
+    t.coin = coin;
+    const w = t.sides[side].id, l = t.sides[1 - side].id;
+    if (t.score[1 - side] === 0 && !coin) this.add(this.cleanSheets, w);
+    this.out.set(l, this.stage);
+    this.alive = this.alive.filter(id => id !== l);
+    this.ctx.event(`${coin ? '🪙' : '🏒'} ${this.name(w)} beats ${this.name(l)} ${Math.max(...t.score)}–${Math.min(...t.score)}${coin ? ' on a coin flip' : ''}`);
+    this.ctx.changed();
+  }
+
+  onTick(now: number) {
+    if (this.result) return;
+    if (this.phase === 'count' && now >= this.startAt) {
+      this.phase = 'play';
+      for (const t of this.tables) { t.puck.at = now; t.ownSince = now; }
+      this.ctx.changed();
     }
-    const a = best ? best.a : sl.mid;
-    s.target = clampToZone(i, this.n, Math.cos(a) * 0.85 + err(), Math.sin(a) * 0.85 + err());
+    if (this.phase === 'play') {
+      for (const t of this.tables) if (t.winner < 0) this.run(t, now);
+      if (this.tables.every(t => t.winner >= 0)) { this.phase = 'break'; this.nextAt = now + HOCKEY.breakMs; this.ctx.changed(); }
+    } else if (this.phase === 'break' && now >= this.nextAt) {
+      if (this.alive.length > 1) this.nextStage(now);
+      else return this.finish();
+    }
+    this.ctx.toAll({
+      t: 'hk', at: now,
+      T: this.tables.map(t => [...t.sides.flatMap(x => [r3(x.m.x), r3(x.m.y)]), r3(t.puck.x), r3(t.puck.y), r3(t.puck.vx), r3(t.puck.vy), Math.round(t.puck.at), t.puck.n]),
+    });
+  }
+
+  run(t: Table, now: number) {
+    for (const s of [0, 1]) {
+      const side = t.sides[s];
+      if (this.isBot(side.id) || !this.ctx.connected(side.id)) this.aim(t, s, now);
+    }
+    // Run the puck while it's in a half the server has, until it crosses to a phone.
+    const p = t.puck;
+    p.at = Math.max(p.at, now - CATCH_UP_MS);
+    while (p.at + HOCKEY.dt * 1000 <= now && this.serverRuns(t, sideOf(p.y), now)) {
+      const was = sideOf(p.y);
+      const g = stepPuck(p, t.sides.map(x => x.m));
+      p.at += HOCKEY.dt * 1000;
+      if (g >= 0) return this.concede(t, g, now);
+      if (sideOf(p.y) !== was) t.ownSince = now;
+    }
+    if (now >= this.endAt + (t.ot ? HOCKEY.overtimeMs : 0)) {
+      if (t.score[0] !== t.score[1]) this.win(t, t.score[0] > t.score[1] ? 0 : 1);
+      else if (!t.ot) { t.ot = true; this.ctx.changed(); }
+      else this.win(t, this.ctx.rng() < 0.5 ? 0 : 1, true);
+    }
+  }
+
+  // Bots (and a phone that dropped): strike a puck in their half from the goal
+  // side, otherwise guard the goal, a little late and a little off.
+  aim(t: Table, s: number, now: number) {
+    const side = t.sides[s], p = t.puck, rng = this.ctx.rng;
+    const gy = s === 0 ? HOCKEY.L : 0, dir = s === 0 ? -1 : 1;
+    if (now >= side.nextAim) {
+      side.nextAim = now + 80 + rng() * 220 * (1.2 - side.skill);
+      const noise = () => (rng() - 0.5) * 0.18 * (1.1 - side.skill);
+      if (sideOf(p.y) === s) {
+        const behind = Math.abs(side.m.y - gy) < Math.abs(p.y - gy) - 0.02;
+        const dx = p.x - HOCKEY.W / 2, dy = p.y - gy, d = Math.sqrt(dx * dx + dy * dy) || 1;
+        side.target = behind
+          ? clampMallet(s, p.x + (dx / d) * 0.15 + noise(), p.y + (dy / d) * 0.15 + noise())
+          : clampMallet(s, p.x - (dx / d) * 0.2 + noise(), p.y - (dy / d) * 0.2 + noise());
+      } else side.target = clampMallet(s, HOCKEY.W / 2 + (p.x - HOCKEY.W / 2) * 0.6 + noise(), gy + dir * 0.25);
+    }
+    const speed = 1.6 + 1.4 * side.skill, dt = this.tickMs / 1000;
+    const dx = side.target[0] - side.m.x, dy = side.target[1] - side.m.y, d = Math.sqrt(dx * dx + dy * dy), step = Math.min(d, speed * dt);
+    moveMallet(side.m, side.m.x + (d ? (dx / d) * step : 0), side.m.y + (d ? (dy / d) * step : 0), dt, 0.6);
   }
 
   finish() {
-    // Still in beats out; then more lives, then more goals. Out players rank by
-    // how long they lasted, then goals.
-    const score = (s: Seat) => (s.out ? s.out * 1000 : 1e12 + s.lives * 1e6) + s.goals;
-    const goals = (s: Seat) => s.goals ? ` · ${s.goals} goal${s.goals === 1 ? '' : 's'}` : '';
-    const ranking = placesByScore(this.seats, score).map(({ item: s, place }) => ({
-      id: s.id, place, stat: (s.out ? `🥅 out at ${Math.round(s.out / 1000)}s` : `${'❤️'.repeat(s.lives)} left`) + goals(s),
+    const champ = this.alive[0];
+    const gd = (id: string) => (this.gf.get(id) ?? 0) - (this.ga.get(id) ?? 0);
+    const reached = (id: string) => (id === champ ? this.stages + 1 : this.out.get(id) ?? 0);
+    const score = (id: string) => reached(id) * 1e6 + (gd(id) + 1000) * 1e3 + (this.gf.get(id) ?? 0);
+    const labelAt = (stage: number) => {
+      let n = this.ctx.players.length;
+      for (let i = 0; i < stage; i++) n = Math.ceil(n / 2);
+      return stageLabel(n, stage);
+    };
+    const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
+    const ranking = placesByScore(this.ctx.players.map(p => p.id), score).map(({ item: id, place }) => ({
+      id, place, stat: `${id === champ ? '🏆 champion' : `out in the ${labelAt(this.out.get(id) ?? 0)}`} · ${signed(gd(id))}`,
     }));
-    const alive = this.alive();
-    const headline = alive.length === 1 ? `🏒 ${this.name(alive[0].id)} is the last one at the table`
-      : alive.length ? `🏒 Time! ${alive.length} people still standing`
-      : '🏒 Nobody survived the air hockey table';
-    const seat = (id: string) => this.seats.find(s => s.id === id);
+    const headline = champ ? `🏒 ${this.name(champ)} wins the air hockey tournament` : '🏒 Nobody won. Somehow.';
     const awards = [
-      mostAward(this.ctx.players, id => seat(id)?.goals ?? 0, '🎯', 'Sniper', n => `scored ${n} goal${n === 1 ? '' : 's'}`),
-      mostAward(this.ctx.players, id => seat(id)?.blocks ?? 0, '🧱', 'Brick Wall', n => `blocked ${n} shots`),
-      mostAward(this.ctx.players, id => Math.round((seat(id)?.slap ?? 0) * KMH), '⚡', 'Slapshot', n => `hit it at ${n} km/h`),
+      mostAward(this.ctx.players, id => this.gf.get(id) ?? 0, '🎯', 'Sniper', n => `scored ${n} goal${n === 1 ? '' : 's'}`),
+      mostAward(this.ctx.players, id => this.cleanSheets.get(id) ?? 0, '🧤', 'Clean Sheet', n => `won ${n} match${n === 1 ? '' : 'es'} without conceding`),
+      mostAward(this.ctx.players, id => this.golden.get(id) ?? 0, '⚡', 'Golden Goal', n => `won ${n === 1 ? 'a match' : `${n} matches`} in overtime`),
     ].filter((a): a is Award => !!a);
     this.result = { ranking, headline, awards };
   }
 
-  view(): HockeyView {
-    return { startAt: this.startAt, endAt: this.endAt, seats: this.seats.map(({ id, lives, out, goals }) => ({ id, lives, out, goals })) };
+  view(forId: string | null): HockeyView {
+    const w = forId ? this.where(forId) : null;
+    const label = stageLabel(this.alive.length + this.tables.filter(t => t.winner >= 0).length, this.stage);
+    return {
+      phase: this.phase, stage: this.stage, stages: this.stages, label,
+      startAt: this.startAt, endAt: this.endAt, nextAt: this.nextAt,
+      tables: this.tables.map(t => ({ ids: [t.sides[0].id, t.sides[1].id], score: [...t.score] as [number, number], ot: t.ot, winner: t.winner, coin: t.coin })),
+      bye: this.bye, alive: this.alive,
+      me: w ? { t: this.tables.indexOf(w.t), s: w.s } : null,
+    };
   }
 }
