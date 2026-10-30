@@ -39,7 +39,6 @@ export class RoomCore {
   settings: Settings = { rounds: 8, games: [...DEFAULT_GAMES] };
   playlist: string[] = [];        // games played (or playing) tonight, in order
   totalRounds = 0;
-  birdRound = 0;                  // the night's one bird round (never round 1)
   round = 0;
   gameId = '';
   game: ServerGame | null = null;
@@ -171,7 +170,6 @@ export class RoomCore {
         this.history = [];
         this.playlist = [];
         this.totalRounds = this.settings.rounds;
-        this.birdRound = 2 + Math.floor(this.rand() * (this.totalRounds - 1));
         this.round = 0;
         this.advance(now);
         break;
@@ -188,31 +186,35 @@ export class RoomCore {
       case 'again':
         if (this.phase !== 'podium') return;
         for (const p of this.players.values()) p.points = 0;
-        Object.assign(this, { phase: 'lobby', round: 0, totalRounds: 0, birdRound: 0, playlist: [], history: [], outcome: null, nightAwards: [], game: null, gameId: '', phaseEndsAt: 0 });
+        Object.assign(this, { phase: 'lobby', round: 0, totalRounds: 0, playlist: [], history: [], outcome: null, nightAwards: [], game: null, gameId: '', phaseEndsAt: 0 });
         break;
     }
     this.dirty = true;
   }
 
   // ── rotation ───────────────────────────────────────────────────────────────
-  // Picked one round at a time, from who's actually here. The four bird games count
-  // as one mode: a night gets one bird round, never the opener (birdRound is drawn
-  // at the start). No game twice until every eligible one of its kind has been
-  // played; a long night repeats social games rather than adding a second race.
+  // Picked one round at a time, at random from what can run with who's here. The
+  // four bird games count as one card in the deck, so a night has at most one bird
+  // round, and never as the opener. Nothing repeats until the deck runs out; then
+  // the least-played social games come back (never the one just played).
   pickNext(): string {
     const bird = (g: string) => gameById(g)?.kind === 'bird';
     const ok = this.settings.games.filter(g => this.eligible(g));
     const pool = ok.length ? ok : ['quiz'];
     const last = this.playlist[this.playlist.length - 1];
-    const wantBird = this.round === this.birdRound;
     const plays = (g: string) => this.playlist.filter(x => x === g).length;
-    const rest = pool.filter(g => g !== last);
-    const fewest = Math.min(...rest.map(plays));
-    // Unplayed first, then the least-played (never the one just played).
-    const tiers = [pool.filter(g => !plays(g)), rest.filter(g => plays(g) === fewest), rest, pool];
-    // A one-kind night (all birds, say) plays what it has.
-    const lane = tiers.map(xs => xs.filter(g => bird(g) === wantBird)).find(xs => xs.length) ?? tiers.find(xs => xs.length)!;
-    return this.shuffled(lane)[0];
+    const leastPlayed = (xs: string[]) => {
+      const rest = xs.filter(g => g !== last).length ? xs.filter(g => g !== last) : xs;
+      const fewest = Math.min(...rest.map(plays));
+      return this.shuffled(rest.filter(g => plays(g) === fewest))[0];
+    };
+    const birds = pool.filter(bird), social = pool.filter(g => !bird(g));
+    if (!social.length) return leastPlayed(birds);   // an all-bird night
+    const birdCard = birds.length && this.round > 1 && !this.playlist.some(bird);
+    const deck = [...social.filter(g => !plays(g)), ...(birdCard ? ['bird'] : [])];
+    if (!deck.length) return leastPlayed(social);
+    const card = this.shuffled(deck)[0];
+    return card === 'bird' ? this.shuffled(birds)[0] : card;
   }
 
   private shuffled<T>(xs: T[]): T[] {

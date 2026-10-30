@@ -4,7 +4,7 @@ A Mario Party-style night of short minigames for team retros: one lobby, a runni
 
 ## The night
 
-No game repeats in a night. The four bird games count as one mode: each night has one bird round, never the first. Each round's places become points: 10/7/5/3/1, with ties sharing the higher score. Every 4th round and the last round are 🌪️ chaos rounds worth double.
+Each round is a random pick from the enabled games, with no repeats until they run out. The four bird games count as one pick, so a night has at most one bird round, never the first. Each round's places become points: 10/7/5/3/1, with ties sharing the higher score. Every 4th round and the last round are 🌪️ chaos rounds worth double.
 
 | Bird rounds | |
 |---|---|

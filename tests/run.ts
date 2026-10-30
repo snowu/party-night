@@ -128,7 +128,7 @@ for (const [label, games, rounds] of [
     new Set(socials.slice(0, distinct)).size === distinct && played.every((g, i) => g !== played[i - 1]), played.join(','));
   if (label === 'mixed night') {
     const birds = played.filter(g => kind(g) === 'bird').length;
-    check(`${label}: one bird round, not the opener`, birds === 1 && kind(played[0]) !== 'bird', played.join(','));
+    check(`${label}: at most one bird round, not the opener`, birds <= 1 && kind(played[0]) !== 'bird', played.join(','));
   }
   const sums = new Map<string, number>();
   for (const o of room.history) for (const x of o.ranking) sums.set(x.id, (sums.get(x.id) ?? 0) + x.gained);
