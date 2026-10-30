@@ -9,15 +9,18 @@ import { birdGame } from './games/bird/client.ts';
 import { SOCIAL } from './games/social/views.ts';
 import { guessGame } from './games/social/guess.ts';
 import { galleryGame } from './games/social/gallery.ts';
-import { BIRD } from '../shared/bird.ts';
+import { incidentGame } from './games/social/incident.ts';
+import { SATIRE } from './games/social/satire.ts';
 import { photoFinish } from './shell/photo.ts';
 
 const GAMES: Record<string, () => GameClient> = {
-  ...Object.fromEntries(Object.keys(BIRD).map(id => [id, birdGame])),
+  race: birdGame,
   ...SOCIAL,
   draw: guessGame,
   perform: guessGame,
   gallery: galleryGame,
+  ...SATIRE,
+  incident: incidentGame,
 };
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;

@@ -10,12 +10,6 @@ export interface CatalogEntry extends GameInfo {
 export const CATALOG: CatalogEntry[] = [
   { id: 'race', kind: 'bird', minPlayers: 1, title: 'Bird Race', blurb: 'Flap. Bonk. Flap again. First to the 🏁 wins.',
     how: 'Tap, click or Space to flap. Thread a 🎯 coin to hit whoever is leading.' },
-  { id: 'leastpriv', kind: 'bird', minPlayers: 2, title: 'Least Privilege', blurb: 'Every few seconds, last place gets deprovisioned.',
-    how: 'Same race, no finish line. Stay out of last place when the audit comes round.' },
-  { id: 'onelife', kind: 'bird', minPlayers: 1, title: 'One Life', blurb: 'No bonks. No respawns. No second chances.',
-    how: 'One hit and you are out. Last bird flying (or first to the 🏁) wins.' },
-  { id: 'devops', kind: 'bird', minPlayers: 2, title: 'Dev vs Ops', blurb: 'Two teams. Combined distance. Blame is shared.',
-    how: '40 seconds. Your team’s distances add up. Bonks cost the whole team.' },
   { id: 'quiz', kind: 'social', minPlayers: 1, title: 'Pop Quiz', blurb: 'Five questions. Faster right answers score more.',
     how: 'Pick an answer before the bar runs out. The last one is a closest-number guess.' },
   { id: 'approve', kind: 'social', minPlayers: 1, title: 'Approve or Deny', blurb: 'An IAM policy, a request, six seconds. Decide.',
@@ -32,6 +26,20 @@ export const CATALOG: CatalogEntry[] = [
     how: '30 seconds to draw on your own screen, then vote for your favourite (not your own).' },
   { id: 'perform', kind: 'social', minPlayers: 2, needs: 'performer', title: 'Hum & Mime', blurb: 'A volunteer hums and mimes a song or film. Guess it.',
     how: 'Unmute, perform on camera. Everyone else types guesses. Opt in from the lobby.' },
+  { id: 'rootcause', kind: 'social', minPlayers: 2, title: 'Root Cause Analysis', blurb: 'A true tech fact with a blank. Invent a fake answer, then find the real one.',
+    how: 'Write a believable fake. Score for picking the truth, and for every teammate who picks your fake.' },
+  { id: 'hivemind', kind: 'social', minPlayers: 2, title: 'Alignment Meeting', blurb: 'Everyone answers the same prompt. You score for agreeing with the room.',
+    how: 'Type what you think most of the team will type. Original thinking is not rewarded here.' },
+  { id: 'review', kind: 'social', minPlayers: 3, title: 'Performance Review', blurb: 'Two real achievements and one fabrication. Spot the lie.',
+    how: 'Write two truths and a lie about your work life and mark the lie. Then find everyone else\'s.' },
+  { id: 'codereview', kind: 'social', minPlayers: 3, title: 'Code Review', blurb: 'Two people answer the same prompt. Everyone else votes which one to merge.',
+    how: 'Write the funniest answer to your prompt. Votes are points; a unanimous approval earns a bonus.' },
+  { id: 'incident', kind: 'social', minPlayers: 1, title: 'Incident Response', blurb: 'Wait for the page, then ack it faster than anyone. False alarms score nothing.',
+    how: 'When the screen turns red, tap (or press Space) as fast as you can. Tapping early is a false alarm.' },
+  { id: 'oncall', kind: 'social', minPlayers: 2, title: 'On-Call Rotation', blurb: 'Pass the pager before it goes off. Whoever holds it at 3am is out.',
+    how: 'If the pager is yours, tap a teammate to hand it over. Last ones standing win.' },
+  { id: 'planning', kind: 'social', minPlayers: 1, title: 'Planning Poker', blurb: 'Estimate the number. Closest without going over wins.',
+    how: 'Type your estimate. Anything over the real number is over budget and scores nothing.' },
 ];
 
 export const gameById = (id: string) => CATALOG.find(g => g.id === id);

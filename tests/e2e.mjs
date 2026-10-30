@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PW ?? 'playwright');
 const BASE = process.env.BASE ?? 'http://localhost:8004';
 const SHOTS = process.env.SHOTS ?? 'dist/shots';
-const GAMES = (process.env.GAMES ?? 'race,quiz,devops,approve').split(',');
+const GAMES = (process.env.GAMES ?? 'race,quiz,incident,codereview').split(',');
 mkdirSync(SHOTS, { recursive: true });
 
 const code = Array.from({ length: 4 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]).join('');
@@ -60,12 +60,22 @@ while (Date.now() - t0 < 8 * 60_000) {
       else {
         const btn = await p.$('#game button.opt:not([disabled])');
         if (btn) await btn.click().catch(() => {});
+        // Text rounds: fill every empty field, tick the first radio (the "lie"), submit.
+        for (const form of await p.$$('#game form[data-act]:not([data-act="num"])')) {
+          for (const f of await form.$$('input:not([type="radio"]), textarea')) if (!await f.inputValue().catch(() => 'x')) await f.fill(`e2e ${Math.random().toString(36).slice(2, 7)}`).catch(() => {});
+          const radio = await form.$('input[type="radio"]');
+          if (radio) await radio.check().catch(() => {});
+          const submit = await form.$('button:not([disabled])');
+          if (submit) await submit.click().catch(() => {});
+        }
+        const pad = await p.$('.inc-pad.alarm');
+        if (pad) await pad.click().catch(() => {});
         const num = await p.$('#num');
         // The field can re-render between fill and Enter; the next pass just tries again.
         if (num) await num.fill('2000').then(() => num.press('Enter')).catch(() => {});
         // Drawing rounds: scribble a stroke on whichever pad is showing, then vote.
-        const pad = await p.$('.gal-pad canvas, .g-board canvas');
-        const box = pad && await pad.boundingBox();
+        const canvas = await p.$('.gal-pad canvas, .g-board canvas');
+        const box = canvas && await canvas.boundingBox();
         if (box && box.width > 0) {
           const x = box.x + box.width * (0.2 + Math.random() * 0.6), y = box.y + box.height * (0.2 + Math.random() * 0.6);
           await p.mouse.move(x, y); await p.mouse.down();

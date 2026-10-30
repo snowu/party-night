@@ -13,10 +13,7 @@ export const RACE_OPTS = {
   gravity: 0.4, flap: -8.2, maxFall: 8, softBounds: true,
 } satisfies StateOpts;
 
-// One Life has no bonks to save you, so it's gentler still.
-export const ONE_LIFE_OPTS = { ...RACE_OPTS, gapMul: 1.35, maxSpeedLevel: 4 } satisfies StateOpts;
-
-export const raceState = (seed: number, oneLife = false) => createState(seed, oneLife ? ONE_LIFE_OPTS : RACE_OPTS);
+export const raceState = (seed: number) => createState(seed, RACE_OPTS);
 
 export const ITEM_GRAB_PX = 34;     // how close to the gap centre you must pass to grab a coin
 
@@ -36,8 +33,8 @@ export type Coin = '' | 'atk';
 
 // Whether pipe n's gap holds a 🎯 coin: deterministic from the seed + spawn index,
 // so every racer sees the same coins on the same pipes. About 1 gap in 10.
-export function coinAt(seed: number, n: number, attacks: boolean): Coin {
-  if (n < 5 || !attacks) return '';
+export function coinAt(seed: number, n: number): Coin {
+  if (n < 5) return '';
   return mulberry32((seed ^ Math.imul(n, 0x9E3779B1)) >>> 0)() < 0.1 ? 'atk' : '';
 }
 

@@ -4,23 +4,23 @@
 import { chip, esc, face, fmt, timer, type App } from '../../app.ts';
 import { canPlay, social, type SocialView } from './wrap.ts';
 
-const head = (gv: any, label: string) =>
+export const head = (gv: any, label: string) =>
   `<div class="stagehead"><span class="muted">${label} ${gv.stage + 1}/${gv.stages}</span>${gv.step === 'q' ? timer(gv.endsAt, gv.stageMs) : '<div class="timer done"><i></i></div>'}</div>`;
 
 // Who has answered (faces light up), so the room can see who they're waiting on.
-function waiting(app: App, gv: any) {
+export function waiting(app: App, gv: any) {
   const ids = app.s.participants.filter(id => !gv.bench.includes(id));
   return `<div class="waiting">${ids.map(id => { const p = app.player(id); return p ? face(p, gv.answered.includes(id) ? 'in' : 'dim') : ''; }).join('')}</div>`;
 }
 
-function gains(app: App, g: Record<string, number>) {
+export function gains(app: App, g: Record<string, number>) {
   const rows = Object.entries(g).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
   if (!rows.length) return '<p class="muted center">Nobody scored on that one.</p>';
   return `<div class="gains">${rows.map(([id, n]) => chip(app.player(id), `<em>+${fmt(n)}</em>`)).join('')}</div>`;
 }
 
-const ans = (app: App, i: number, v: unknown) => app.net.game({ k: 'ans', i, v });
-const locked = (gv: any, app: App) => gv.mine !== null || !canPlay(app) || gv.step !== 'q' || gv.bench.includes(app.me);
+export const ans = (app: App, i: number, v: unknown) => app.net.game({ k: 'ans', i, v });
+export const locked = (gv: any, app: App) => gv.mine !== null || !canPlay(app) || gv.step !== 'q' || gv.bench.includes(app.me);
 
 // ── Pop Quiz ────────────────────────────────────────────────────────────────
 export const quiz: SocialView = {

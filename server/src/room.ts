@@ -193,9 +193,9 @@ export class RoomCore {
   }
 
   // ── rotation ───────────────────────────────────────────────────────────────
-  // Picked one round at a time, at random from what can run with who's here. The
-  // four bird games count as one card in the deck, so a night has at most one bird
-  // round, and never as the opener. Nothing repeats until the deck runs out; then
+  // Picked one round at a time, at random from what can run with who's here. Bird
+  // games count as one card in the deck, so a night has at most one bird round,
+  // and never as the opener. Nothing repeats until the deck runs out; then
   // the least-played social games come back (never the one just played).
   pickNext(): string {
     const bird = (g: string) => gameById(g)?.kind === 'bird';

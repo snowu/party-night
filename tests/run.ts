@@ -6,7 +6,7 @@ import { raceState, decide, newBrain, coinAt, courseLength, bonk } from '../src/
 import { RoomCore, type Conn } from '../server/src/room.ts';
 import { evaluate, makeCard, wildMatch } from '../server/src/games/approve.ts';
 import { mulberry32, placesByScore } from '../shared/points.ts';
-import { BIRD } from '../shared/bird.ts';
+import { RACE } from '../shared/bird.ts';
 import { CATALOG } from '../shared/catalog.ts';
 
 let failed = 0;
@@ -34,7 +34,7 @@ for (const [seed, want] of GOLDEN) {
   check(`race replay seed ${seed}`, got === want, `got ${got}`);
 }
 check('same seed, same course', JSON.stringify(raceState(7).pipes) === JSON.stringify(raceState(7).pipes));
-check('coins are seeded', [...Array(50).keys()].every(n => coinAt(9, n, true) === coinAt(9, n, true)));
+check('coins are seeded', [...Array(50).keys()].every(n => coinAt(9, n) === coinAt(9, n)));
 check('course length is sane', Math.abs(courseLength(30) - 30 * 60 * 4.3) < 30 * 60 * 0.5, String(courseLength(30)));
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -84,14 +84,12 @@ function runNight(games: string[], rounds: number, seed: number) {
     if (s.game.kind === 'bird' && t - lastRep >= 500 && t >= gv.startAt) {
       // Alice is the host, so she reports for herself and the bots; Bob for himself.
       lastRep = t;
-      const v = BIRD[gv.variant];
-      const finish = v.courseSec ? courseLength(v.courseSec) : Infinity;
+      const finish = courseLength(RACE.courseSec);
       for (const b of gv.birds) {
         if (b.st === 'fin' || b.st === 'out') continue;
         const d = (dist.get(b.id) ?? 0) + 120 + r() * 140;
         dist.set(b.id, d);
-        const crashed = !v.bonks && r() < 0.02;
-        const st = d >= finish ? 'fin' : crashed ? 'out' : 'fly';
+        const st = d >= finish ? 'fin' : 'fly';
         send(b.id === 'bob' ? bob : alice, { t: 'g', k: 'rep', id: b.id, d, st, fm: t - gv.startAt, bk: Math.floor(r() * 3) });
       }
     } else if (s.game.kind === 'social') {
@@ -101,9 +99,15 @@ function runNight(games: string[], rounds: number, seed: number) {
       if (v && v.step === 'q' && v.mine === null && !v.bench?.includes('bob')) {
         const id = s.game.id;
         const ans = id === 'quiz' ? (v.q.closest ? 1000 : 0) : id === 'approve' ? true : id === 'hottake' ? { agree: true, pct: 50 }
-          : id === 'who' ? (v.stage === 0 ? 'I once deleted prod' : 'alice') : id === 'mostlikely' ? 'alice' : null;
+          : id === 'who' ? (v.stage === 0 ? 'I once deleted prod' : 'alice') : id === 'mostlikely' ? 'alice'
+          : id === 'rootcause' ? (v.phase === 'write' ? 'a hamster' : v.options.findIndex((o: any) => !o.mine))
+          : id === 'hivemind' ? 'coffee' : id === 'planning' ? 100
+          : id === 'review' ? (v.stage === 0 ? { s: ['shipped it', 'fixed it', 'documented it'], lie: 2 } : 0)
+          : id === 'codereview' ? (v.stage === 0 ? (v.prompt ? 'synergy' : null) : 0)
+          : id === 'incident' ? (t >= v.fireAt ? 300 : null) : null;
         if (ans !== null) send(bob, { t: 'g', k: 'ans', i: v.stage, v: ans });
       }
+      if (s.game.id === 'oncall' && v?.phase === 'live' && v.holder === 'bob') send(bob, { t: 'g', k: 'pass', to: 'alice' });
       if ((s.game.id === 'draw' || s.game.id === 'perform') && v?.artist !== 'bob' && r() < 0.05) send(bob, { t: 'g', k: 'guess', text: 'banana' });
       if (s.game.id === 'gallery' && v?.step === 'draw') for (const c of [alice, bob]) send(c, { t: 'g', k: 'ink', id: `s${Math.floor(r() * 1e6)}`, c: '#111111', w: 10, pts: [r() * 1000, r() * 1000, 500, 500] });
       if (s.game.id === 'gallery' && v?.step === 'vote' && v.myVote === null) send(bob, { t: 'g', k: 'vote', slot: v.mySlot === 0 ? 1 : 0 });
@@ -113,8 +117,9 @@ function runNight(games: string[], rounds: number, seed: number) {
 }
 
 for (const [label, games, rounds] of [
-  ['bird night', ['race', 'leastpriv', 'onelife', 'devops'], 4],
+  ['bird night', ['race'], 4],
   ['social night', ['quiz', 'approve', 'hottake', 'who', 'mostlikely', 'draw', 'perform', 'gallery'], 8],
+  ['satire night', ['rootcause', 'hivemind', 'review', 'codereview', 'incident', 'oncall', 'planning'], 8],
   ['mixed night', CATALOG.map(g => g.id), 12],
 ] as const) {
   const { room, alice, tv, hof } = runNight([...games], rounds, rounds * 31);
@@ -125,7 +130,7 @@ for (const [label, games, rounds] of [
   const socials = played.filter(g => kind(g) === 'social');
   const distinct = Math.min(socials.length, games.filter(g => kind(g) === 'social').length);
   check(`${label}: no game repeats until its kind runs out, never back to back`,
-    new Set(socials.slice(0, distinct)).size === distinct && played.every((g, i) => g !== played[i - 1]), played.join(','));
+    new Set(socials.slice(0, distinct)).size === distinct && (games.length < 2 || played.every((g, i) => g !== played[i - 1])), played.join(','));
   if (label === 'mixed night') {
     const birds = played.filter(g => kind(g) === 'bird').length;
     check(`${label}: at most one bird round, not the opener`, birds <= 1 && kind(played[0]) !== 'bird', played.join(','));

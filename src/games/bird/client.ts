@@ -1,5 +1,5 @@
-// ─── BIRD GAMES (client) ──────────────────────────────────────────────────────
-// Race, Least Privilege, One Life and Dev vs Ops. Each client flies its own copy of
+// ─── BIRD RACE (client) ───────────────────────────────────────────────────────
+// Each client flies its own copy of
 // the seeded course; the host's browser also flies the bots. Positions go peer to
 // peer over the room relay (batched every 50ms, heartbeat every 400ms) and are
 // dead-reckoned between snapshots; finishes and distances go to the server, which
@@ -9,7 +9,7 @@
 // tabs, and the host's bots must keep flying regardless. Drawing uses rAF.
 import { C, TICK_MS, getEffective, step, type GameState, type Pipe } from './physics-core.ts';
 import * as R from './race-core.ts';
-import { ATTACKS, BIRD, PX_PER_M, ordinal, type BirdPub, type BirdVariant, type BirdView } from '../../../shared/bird.ts';
+import { ATTACKS, PX_PER_M, ordinal, type BirdPub, type BirdView } from '../../../shared/bird.ts';
 import { avatarSrc, type App, type GameClient } from '../../app.ts';
 import type { PlayerPub } from '../../../shared/protocol.ts';
 
@@ -33,12 +33,8 @@ const SEND_EVERY_MS = 50;
 const HEARTBEAT_MS = 400;
 const REPORT_MS = 500;
 
-const SKIES: Record<string, [string, string]> = {
-  race: ['#5ec8f2', '#bdeaff'], leastpriv: ['#2a1640', '#c2456b'], onelife: ['#0b1736', '#3a4f8f'], devops: ['#0f5f63', '#7fd6c2'],
-};
-const PIPES: Record<string, [string, string]> = {
-  race: ['#3ccf6e', '#1f8a45'], leastpriv: ['#ff6b8a', '#9c2846'], onelife: ['#ffd23f', '#a8811a'], devops: ['#2de2e6', '#13858a'],
-};
+const SKY = ['#5ec8f2', '#bdeaff'];
+const PIPE = ['#3ccf6e', '#1f8a45'];
 
 const imgs = new Map<string, HTMLImageElement>();
 function sprite(key: string) {
@@ -49,8 +45,7 @@ function sprite(key: string) {
 
 export const birdGame = (): GameClient => {
   let app: App, root: HTMLElement, canvas: HTMLCanvasElement, g: CanvasRenderingContext2D;
-  let variant = 'race', v: BirdVariant = BIRD.race, seed = 0, startAt = 0, finishDist = Infinity;
-  let oneLife = false;
+  let seed = 0, startAt = 0, finishDist = Infinity;
   const runs = new Map<string, Run>();
   const remotes = new Map<string, Remote>();
   let cam: GameState, camBrain: R.Brain;
@@ -68,7 +63,7 @@ export const birdGame = (): GameClient => {
   const view = () => app.s.gv as BirdView | null;
   const myRun = () => (app.me ? runs.get(app.me) : undefined);
   const serverBird = (id: string): BirdPub | undefined => view()?.birds.find(b => b.id === id);
-  const coinOf = (n: number) => R.coinAt(seed, n, v.attacks);
+  const coinOf = (n: number) => R.coinAt(seed, n);
 
   // ── standings: my own runs exactly, everyone else dead-reckoned ──
   function extrapolate(r: Remote, now: number) {
@@ -79,7 +74,7 @@ export const birdGame = (): GameClient => {
     return { y: Math.min(C.GROUND - (C.PLAYER_SIZE * r.size) / 2, y), vy, d: r.d + r.sp * n };
   }
 
-  interface Row { id: string; d: number; st: BirdPub['st']; fm: number; team?: 'dev' | 'ops' }
+  interface Row { id: string; d: number; st: BirdPub['st']; fm: number }
   function standings(): Row[] {
     const now = performance.now();
     const rows: Row[] = app.s.participants.map(id => {
@@ -89,7 +84,7 @@ export const birdGame = (): GameClient => {
       let st: BirdPub['st'] = sb?.st ?? 'fly';
       if (run && run.st !== 'fly') st = run.st;
       if (rem && rem.st !== 'fly' && st === 'fly') st = rem.st;
-      return { id, d: st === 'fin' ? Math.max(d, finishDist) : d, st, fm: run?.fm || sb?.fm || 0, team: sb?.team };
+      return { id, d: st === 'fin' ? Math.max(d, finishDist) : d, st, fm: run?.fm || sb?.fm || 0 };
     });
     const rank = (r: Row) => r.st === 'fin' ? 0 : r.st === 'fly' ? 1 : r.st === 'out' ? 2 : 3;
     return rows.sort((a, b) => rank(a) - rank(b) || (a.st === 'fin' ? a.fm - b.fm : b.d - a.d));
@@ -98,7 +93,7 @@ export const birdGame = (): GameClient => {
   // ── sim ──
   function newRun(id: string, bot: boolean): Run {
     return {
-      id, s: R.raceState(seed, oneLife), seen: new WeakSet(), st: 'fly', fm: 0, bk: 0,
+      id, s: R.raceState(seed), seen: new WeakSet(), st: 'fly', fm: 0, bk: 0,
       brain: bot ? R.newBrain(0.3 + Math.random() * 0.45) : null, dirty: true, lastSent: 0,
     };
   }
@@ -124,15 +119,9 @@ export const birdGame = (): GameClient => {
     else if (pendingFlap) { flapped = true; pendingFlap = false; }
     const res = step(r.s, flapped);
     if (res.dead) {
-      if (v.bonks) {
-        R.bonk(r.s);
-        r.bk++;
-        if (mine) bonkFx = performance.now();
-      } else {
-        r.st = 'out';
-        if (mine) bonkFx = performance.now();
-        report(r);
-      }
+      R.bonk(r.s);
+      r.bk++;
+      if (mine) bonkFx = performance.now();
       r.dirty = true;
     }
     if (flapped) r.dirty = true;
@@ -224,7 +213,7 @@ export const birdGame = (): GameClient => {
     const following = me && me.st === 'fly';
     const world = following ? me.s : cam;
     const camDist = world.dist;
-    const [sky1, sky2] = SKIES[variant] ?? SKIES.race;
+    const [sky1, sky2] = SKY;
     const grd = g.createLinearGradient(0, 0, 0, C.GROUND);
     grd.addColorStop(0, sky1);
     grd.addColorStop(1, sky2);
@@ -277,7 +266,7 @@ export const birdGame = (): GameClient => {
   }
 
   function drawPipes(s: GameState, me: Run | undefined) {
-    const [body, dark] = PIPES[variant] ?? PIPES.race;
+    const [body, dark] = PIPE;
     for (const p of s.pipes) {
       if (p.x > W + 10 || p.x + C.PIPE_W < -10) continue;
       const bot = p.topH + p.gap;
@@ -375,7 +364,7 @@ export const birdGame = (): GameClient => {
 
   function label(r: Row): string {
     if (r.st === 'fin') return `🏁 ${(r.fm / 1000).toFixed(1)}s`;
-    if (r.st === 'out') return variant === 'leastpriv' ? '🔒 out' : '💥 out';
+    if (r.st === 'out') return '💥 out';
     if (r.st === 'gone') return 'left';
     return Number.isFinite(finishDist) ? `${Math.floor(Math.min(0.999, r.d / finishDist) * 100)}%` : `${Math.round(r.d / PX_PER_M)}m`;
   }
@@ -384,7 +373,6 @@ export const birdGame = (): GameClient => {
   function drawStandings(_t: number) {
     const all = standings();
     const shown = all.map((r, i) => ({ r, i })).filter(({ r, i }) => i < 5 || r.id === app.me);
-    const lastFly = variant === 'leastpriv' ? [...all].reverse().find(r => r.st === 'fly') : null;
     g.save();
     const rowH = 28 * ui, boxW = 330 * ui;
     g.fillStyle = 'rgba(13,8,32,0.88)';
@@ -398,10 +386,9 @@ export const birdGame = (): GameClient => {
     shown.forEach(({ r, i }, row) => {
       const p = app.player(r.id);
       g.globalAlpha = r.st === 'gone' || r.st === 'out' ? 0.5 : 1;
-      g.fillStyle = r.id === app.me ? '#ffd23f' : r === lastFly ? '#ff6b8a' : '#f6f1ff';
-      const team = r.team ? (r.team === 'dev' ? '💻 ' : '🛠️ ') : '';
+      g.fillStyle = r.id === app.me ? '#ffd23f' : '#f6f1ff';
       const y = 12 + 50 * ui + row * rowH;
-      g.fillText(`${i + 1}. ${team}${(p?.name ?? '?').slice(0, 14)}`, 26, y, boxW - 120 * ui);
+      g.fillText(`${i + 1}. ${(p?.name ?? '?').slice(0, 14)}`, 26, y, boxW - 120 * ui);
       g.textAlign = 'right';
       g.fillText(label(r), boxW, y);
       g.textAlign = 'left';
@@ -409,33 +396,20 @@ export const birdGame = (): GameClient => {
     g.restore();
   }
 
-  // The ground strip: the round's clock (or audit / team score) on the right, and a
+  // The ground strip: the round's clock on the right, and a
   // track with a dot per bird on the left, so you know where you sit in the pack.
   function drawStrip(t: number) {
     const gv = view();
     if (!gv || t < startAt) return;
     const rows = standings();
     const flying = rows.filter(r => r.st === 'fly');
-    let text = '', warn = false;
-    if (variant === 'leastpriv' && gv.nextElimAt && flying.length > 1) {
-      text = `🔒 Audit in ${Math.max(0, Math.ceil((gv.nextElimAt - t) / 1000))}s`;
-      warn = flying[flying.length - 1].id === app.me;
-      if (warn) text += ' · you\'re last!';
-    } else if (variant === 'devops' && gv.endsAt) {
-      const tot = { dev: 0, ops: 0 };
-      for (const r of rows) if (r.team) tot[r.team] += r.d;
-      text = `💻 ${Math.round(tot.dev / PX_PER_M)}m vs ${Math.round(tot.ops / PX_PER_M)}m 🛠️ · ${Math.max(0, Math.ceil((gv.endsAt - t) / 1000))}s`;
-    } else if (variant === 'onelife') {
-      text = `💥 ${flying.length} flying · ${((t - startAt) / 1000).toFixed(0)}s`;
-    } else {
-      text = `⏱️ ${((t - startAt) / 1000).toFixed(1)}s`;
-    }
+    const text = `⏱️ ${((t - startAt) / 1000).toFixed(1)}s`;
     const mid = (C.GROUND + C.H) / 2;
     g.save();
     g.font = fs(20);
     g.textAlign = 'right';
     g.textBaseline = 'middle';
-    g.fillStyle = warn ? '#ff6b8a' : '#f6f1ff';
+    g.fillStyle = '#f6f1ff';
     g.fillText(text, W - 20, mid);
     const x0 = 24, x1 = Math.max(W * 0.4, W - g.measureText(text).width - 50);
     g.strokeStyle = '#3a2a6e';
@@ -483,12 +457,11 @@ export const birdGame = (): GameClient => {
 
   function drawBanner(me: Run | undefined) {
     let text = '';
-    const sb = app.me ? serverBird(app.me) : undefined;
     if (!me) text = app.me ? 'Spectating · you join next round' : '';
     else if (me.st === 'fin') {
       const place = standings().filter(r => r.st === 'fin').findIndex(r => r.id === me.id) + 1;
       text = `🏁 Finished ${place ? ordinal(place) : ''} · ${(me.fm / 1000).toFixed(1)}s`;
-    } else if (me.st === 'out' || sb?.st === 'out') text = variant === 'leastpriv' ? '🔒 Deprovisioned. Spectating.' : `💥 Out at ${Math.round(me.s.dist / PX_PER_M)}m. Spectating.`;
+    }
     if (!text) return;
     g.save();
     g.font = fs(30, 'Bungee, sans-serif', '400');
@@ -523,13 +496,10 @@ export const birdGame = (): GameClient => {
     mount(r, a) {
       app = a; root = r;
       const gv = view()!;
-      variant = gv.variant;
-      v = BIRD[variant];
-      oneLife = !v.bonks;
       seed = a.s.seed;
       startAt = gv.startAt;
-      finishDist = gv.courseSec ? R.courseLength(gv.courseSec, oneLife ? R.ONE_LIFE_OPTS : R.RACE_OPTS) : Infinity;
-      cam = R.raceState(seed, oneLife);
+      finishDist = R.courseLength(gv.courseSec);
+      cam = R.raceState(seed);
       camBrain = R.newBrain(1);
       const playing = !!a.me && a.s.participants.includes(a.me);
       if (innerHeight > innerWidth && innerWidth < 760) { W = 760; ui = 1.5; }
@@ -547,11 +517,7 @@ export const birdGame = (): GameClient => {
       repTimer = window.setInterval(() => { if (app.now() >= startAt) for (const r of runs.values()) report(r); }, REPORT_MS);
       raf = requestAnimationFrame(frame);
     },
-    update(a) {
-      app = a;
-      // Least Privilege: the server deprovisions; stop flying when it says so.
-      for (const r of runs.values()) if (r.st === 'fly' && serverBird(r.id)?.st === 'out') { r.st = 'out'; r.dirty = true; }
-    },
+    update(a) { app = a; },
     bc(from, e, p) {
       if (e === 'snaps' && p?.seed === seed) {
         const now = performance.now();

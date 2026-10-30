@@ -67,7 +67,7 @@ export function lobby(app: App) {
     <div class="card wide">
       <h2>Tonight</h2>
       <div class="row"><span class="muted">Rounds</span>${ROUND_CHOICES.map(n => `<button class="pillbtn ${s.settings.rounds === n ? 'on' : ''}" data-act="rounds" data-v="${n}" ${host ? '' : 'disabled'}>${n}</button>`).join('')}</div>
-      <p class="muted small">Each round is a random pick from the ticked games, with no repeats. The bird games count as one pick, so there's at most one bird round, never the first. Points: ${PLACE_POINTS.join('/')} by place, ties share; every 4th round and the last are 🌪️ chaos rounds worth double.</p>
+      <p class="muted small">Each round is a random pick from the ticked games, with no repeats. Bird Race is never the first round. Points: ${PLACE_POINTS.join('/')} by place, ties share; every 4th round and the last are 🌪️ chaos rounds worth double.</p>
       <div class="games">${games}</div>
       ${host ? `<button class="big wide" data-act="start">Start the night</button>` : `<p class="center muted">Waiting for ${esc(app.player(s.hostId)?.name ?? 'the host')} to start…</p>`}
     </div>

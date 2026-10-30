@@ -4,14 +4,11 @@ A Mario Party-style night of short minigames for team retros: one lobby, a runni
 
 ## The night
 
-Each round is a random pick from the enabled games, with no repeats until they run out. The four bird games count as one pick, so a night has at most one bird round, never the first. Each round's places become points: 10/7/5/3/1, with ties sharing the higher score. Every 4th round and the last round are 🌪️ chaos rounds worth double.
+Each round is a random pick from the enabled games, with no repeats until they run out. Bird Race is never the first round. Each round's places become points: 10/7/5/3/1, with ties sharing the higher score. Every 4th round and the last round are 🌪️ chaos rounds worth double.
 
-| Bird rounds | |
+| Bird round | |
 |---|---|
 | Bird Race | 30 seconds to the 🏁. Bonks stagger you and never stop you. 🎯 coins briefly slow or bonk whoever is leading. Top two within 0.3s get a photo finish. |
-| Least Privilege | No finish line. Every 6s the last place gets deprovisioned. |
-| One Life | No bonks: one hit and you're out. The course is gentler to make up for it. |
-| Dev vs Ops | Two teams, 40 seconds, combined distance. |
 
 | Social rounds | |
 |---|---|
@@ -23,6 +20,16 @@ Each round is a random pick from the enabled games, with no repeats until they r
 | Draw It | One artist draws, everyone else guesses. |
 | Draw Off | Everyone draws the same word for 30s, then votes on the anonymous gallery. Artists are revealed at the end. |
 | Hum & Mime | An opted-in volunteer performs on the call while everyone else guesses. |
+
+| Work satire rounds | |
+|---|---|
+| Root Cause Analysis | A true tech fact with a blank. Write a believable fake, then pick the real answer from the pile (Fibbage rules). |
+| Alignment Meeting | Everyone answers the same prompt; you score for each teammate who said the same thing. |
+| Performance Review | Two truths and a lie about your work life. The room spots the lie in up to four reviews. |
+| Code Review | Pairs answer the same prompt; everyone else votes which one to merge (Quiplash rules). |
+| Incident Response | Five pages. Tap the moment the screen turns red; reaction time is measured on your own screen. Tapping early is a false alarm. |
+| On-Call Rotation | Hot potato: pass the pager before a hidden timer goes off. Whoever holds it is out. |
+| Planning Poker | Estimate a number. Closest without going over wins. |
 
 The host is the earliest-joined human still connected. They can add bots, pick the number of rounds and switch games on or off. Share rooms with `?room=CODE`. Open `?room=CODE&tv=1` for the spectator screen to share on the call: live standings, and a camera that follows the race leader.
 
@@ -46,7 +53,7 @@ On localhost the page connects to `ws://<host>:8799`. On `*.github.io` it connec
 - `npm run test:e2e` plays a 4-round night in real browsers against the two dev servers above. It uses three contexts on one room (host, a phone-sized player, the spectator screen) plus bots, and checks every screen ends on the same table. Env vars:
   - `PW`: path to a playwright package
   - `CHROME`: the browser executable
-  - `GAMES`: which rounds to play, e.g. `race,gallery,quiz,devops`
+  - `GAMES`: which rounds to play, e.g. `race,gallery,quiz,incident`
   - `SHOTS`: where screenshots go
 
 ## Deploy (two separate deploys)

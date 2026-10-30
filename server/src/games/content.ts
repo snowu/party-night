@@ -140,3 +140,88 @@ export function lev(a: string, b: string): number {
   }
   return d[b.length];
 }
+
+// ── the satire rounds ───────────────────────────────────────────────────────
+
+// Root Cause Analysis: [fact with ___, the real answer, fakes the bots write]. All true.
+export const ROOT_CAUSES: [string, string, string[]][] = [
+  ['In 1947, Harvard engineers taped a ___ into their logbook as the "first actual case of bug being found".', 'moth', ['cockroach', 'mouse tail', 'paperclip', 'spider']],
+  ['HTTP status code 418 means "I\'m a ___".', 'teapot', ['toaster', 'little busy', 'potato', 'printer']],
+  ['Before it was JavaScript, the language was called ___.', 'Mocha', ['NetScript', 'Coffee', 'BrowserTalk', 'Java Lite']],
+  ['Java was originally called ___.', 'Oak', ['Kona', 'Greenbean', 'Brew', 'Pine']],
+  ['The first webcam was pointed at a ___ in a Cambridge University lab.', 'coffee pot', ['fish tank', 'printer queue', 'door', 'goldfish']],
+  ['In 2016, unpublishing an 11-line npm package called ___ broke builds across the internet.', 'left-pad', ['is-even', 'trim-left', 'pad-start', 'string-utils']],
+  ['The big 2017 AWS S3 outage started with a ___.', 'typo', ['squirrel', 'leap second', 'intern', 'solar flare']],
+  ['The Agile Manifesto was written at a ski resort in ___.', 'Utah', ['Colorado', 'Switzerland', 'Vermont', 'Aspen']],
+  ['The word "Scrum" was borrowed from ___.', 'rugby', ['baking', 'sailing', 'a typo', 'wrestling']],
+  ['Kanban was developed at ___.', 'Toyota', ['IKEA', 'Sony', 'McDonald\'s', 'Honda']],
+  ['Bluetooth is named after a Danish ___.', 'king', ['dentist', 'cheese', 'ferry', 'footballer']],
+  ['The Python language is named after ___.', 'Monty Python', ['a pet snake', 'a font', 'a Dutch bakery', 'Guido\'s car']],
+  ['Ward Cunningham, who coined "technical debt", also invented the ___.', 'wiki', ['stand-up meeting', 'pull request', 'sprint', 'kanban board']],
+  ['"Rubber duck debugging" comes from the book "The Pragmatic ___".', 'Programmer', ['Plumber', 'Duck', 'Debugger', 'Architect']],
+];
+
+// Alignment Meeting: [prompt, the answers bots reach for, most popular first].
+export const HIVEMIND: [string, string[]][] = [
+  ['Name a Jira ticket status', ['In Progress', 'Done', 'To Do', 'Blocked', 'In Review', 'Backlog']],
+  ['Name a programming language', ['Python', 'JavaScript', 'Java', 'Rust', 'Go', 'C']],
+  ['A word you hear at every stand-up', ['blocked', 'yesterday', 'sync', 'ticket', 'PR', 'today']],
+  ['Name a cloud provider', ['AWS', 'Azure', 'Google Cloud', 'Cloudflare', 'Oracle']],
+  ['Something in every office kitchen', ['coffee', 'microwave', 'fridge', 'mugs', 'passive-aggressive note']],
+  ['An excuse for a missed deadline', ['scope creep', 'it works on my machine', 'meetings', 'dependencies', 'sick']],
+  ['Name a Scrum ceremony', ['stand-up', 'retro', 'planning', 'review', 'refinement']],
+  ['Name a text editor', ['VS Code', 'Vim', 'Notepad', 'Emacs', 'Sublime']],
+  ['A meeting that should have been an email', ['status update', 'all hands', 'sync', 'stand-up', 'kickoff']],
+  ['Something that is always on fire', ['prod', 'the backlog', 'the build', 'my inbox', 'the server room']],
+  ['Name a JavaScript framework', ['React', 'Vue', 'Angular', 'Svelte', 'Next.js']],
+  ['Name a Git command', ['commit', 'push', 'pull', 'rebase', 'merge', 'status']],
+];
+
+// Performance Review: bots' [truth, truth, lie].
+export const BOT_REVIEWS: [string, string, string][] = [
+  ['I once deployed on a Friday and nothing broke', 'I own a mechanical keyboard', 'I have never force-pushed to main'],
+  ['I have a Jira ticket older than my laptop', 'I know my way around vim', 'I read every PR before approving it'],
+  ['I own more than three rubber ducks', 'I once replied-all to the whole company', 'My code has no TODOs'],
+  ['I named a variable after my cat', 'I have cried during a merge conflict', 'I always update the docs'],
+  ['I have 47 browser tabs open right now', 'I wrote a regex I no longer understand', 'I estimate tickets accurately'],
+];
+
+// Code Review: two people answer the same prompt, the room merges one.
+export const REVIEW_PROMPTS = [
+  'The worst possible name for a microservice', 'What the TODO comment from 2014 says', 'The real reason the deploy failed',
+  'A rejected fifth value of the Agile Manifesto', 'A new Jira status nobody asked for', 'The worst thing to hear in a retro',
+  "The senior dev's only comment on your 3,000-line PR", 'A sprint goal that guarantees failure',
+  'The commit message right before the outage', 'A new Scrum ceremony nobody needs', 'What "quick sync" actually means',
+  'An honest job title for whoever maintains the build', 'The worst thing to find in a config file', 'A feature flag name that should worry everyone',
+];
+export const BOT_QUIPS = [
+  'LGTM 👍', 'It worked on my machine', 'git push --force and pray', 'Synergy-as-a-Service', 'Blocked by legal',
+  'fix: fix the fix', 'A meeting about the meeting', 'Just one more microservice', 'The intern did it',
+  "Ship it, we'll fix it in prod", 'Story points: yes', 'TODO: delete this before launch', 'Kevin from Billing',
+];
+
+// Incident Response: what the page says when it finally goes off.
+export const ALERTS = [
+  'prod-db-01: disk 100% full', 'TLS certificate expired 4 minutes ago', 'Someone pushed to main on a Friday',
+  'p99 latency: 45 seconds', 'An S3 bucket is public', "The CEO can't log in", "DNS. It's always DNS.",
+  'Kafka consumer lag: yes', 'us-east-1 is having a moment', 'The intern found the admin password',
+  'Error rate 100% (the dashboard is fine though)', 'Cron job deleted the backups',
+];
+
+// Planning Poker: [estimate this, the real number]. All true.
+export const ESTIMATES: [string, number][] = [
+  ['In what year was the Agile Manifesto written?', 2001],
+  ['How many people signed the original Agile Manifesto?', 17],
+  ['How many principles sit behind the Agile Manifesto?', 12],
+  ['In what year was the first Scrum Guide published?', 2010],
+  ['In what year did Linus Torvalds announce Linux?', 1991],
+  ['How many bits are in an IPv6 address?', 128],
+  ['Which port does PostgreSQL listen on by default?', 5432],
+  ['In what year did Stack Overflow launch?', 2008],
+  ['How many characters long is a SHA-256 hash written in hex?', 64],
+  ['How many lines of code was the npm package left-pad?', 11],
+  ['In what year does a signed 32-bit Unix timestamp overflow?', 2038],
+  ['In how many days did Brendan Eich write the first JavaScript?', 10],
+  ['In what year was the first email sent?', 1971],
+  ['How many people does the 2020 Scrum Guide say a Scrum Team should be, at most?', 10],
+];
