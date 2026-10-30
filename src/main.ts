@@ -11,7 +11,7 @@ import { guessGame } from './games/social/guess.ts';
 import { galleryGame } from './games/social/gallery.ts';
 import { incidentGame } from './games/social/incident.ts';
 import { SATIRE } from './games/social/satire.ts';
-import { pongGame } from './games/perks/pong.ts';
+import { hockeyGame } from './games/perks/hockey.ts';
 import { poolGame } from './games/perks/pool.ts';
 import { photoFinish } from './shell/photo.ts';
 
@@ -23,7 +23,7 @@ const GAMES: Record<string, () => GameClient> = {
   gallery: galleryGame,
   ...SATIRE,
   incident: incidentGame,
-  pong: pongGame,
+  hockey: hockeyGame,
   pool: poolGame,
 };
 
@@ -182,7 +182,7 @@ requestAnimationFrame(frame);
 const code = (params.get('room') ?? '').toUpperCase();
 const trying = params.get('try');
 if (trying) {
-  // ?try=pong: a fresh room with bots, straight into that game. Reload for another go.
+  // ?try=hockey: a fresh room with bots, straight into that game. Reload for another go.
   enter(Array.from(crypto.getRandomValues(new Uint8Array(4)), x => CODE_ALPHABET[x % CODE_ALPHABET.length]).join(''), store('pn-name') || 'Tester');
   const once = setInterval(() => { if (app.s?.phase === 'lobby' && app.isHost()) { app.net.host('try', { game: trying }); clearInterval(once); } }, 100);
 } else if (tv && /^[A-Z]{4}$/.test(code)) enter(code, '');

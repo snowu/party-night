@@ -34,7 +34,7 @@ export class Room extends DurableObject<Env> {
   timer: ReturnType<typeof setInterval> | null = null;
   every = TICK_MS;
 
-  // Tick at whatever rate the room wants right now (a pong round asks for 33ms).
+  // Tick at whatever rate the room wants right now (an air hockey round asks for 33ms).
   run(core: RoomCore, ms = TICK_MS) {
     if (this.timer) clearInterval(this.timer);
     this.every = ms;

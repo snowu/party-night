@@ -82,7 +82,7 @@ while (Date.now() - t0 < 8 * 60_000) {
           await p.mouse.move(x + 60, y + 40, { steps: 6 }); await p.mouse.move(x + 20, y + 90, { steps: 6 });
           await p.mouse.up();
         }
-        // Trick Shot: pull back from the right and let go; Ping Pong: wave the paddle about.
+        // Trick Shot: pull back from the right and let go; Air Hockey: wave the mallet about.
         const felt = await p.$('.pool-table.aiming');
         const fb = felt && await felt.boundingBox();
         if (fb && fb.width > 0) {
@@ -91,9 +91,9 @@ while (Date.now() - t0 < 8 * 60_000) {
           await p.mouse.move(fb.x + fb.width * 0.55, y + (Math.random() - 0.5) * 20, { steps: 5 });
           await p.mouse.up();
         }
-        const table = await p.$('.pong canvas');
+        const table = await p.$('.hockey canvas');
         const tb = table && await table.boundingBox();
-        if (tb && tb.width > 0) await p.mouse.move(tb.x + tb.width * Math.random(), tb.y + tb.height * 0.8, { steps: 3 });
+        if (tb && tb.width > 0) await p.mouse.move(tb.x + tb.width * Math.random(), tb.y + tb.height * (0.6 + Math.random() * 0.3), { steps: 3 });
         const vote = await p.$('[data-vote]');
         if (vote) await vote.click().catch(() => {});
       }

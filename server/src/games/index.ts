@@ -9,7 +9,7 @@ import { Incident } from './incident.ts';
 import { MostLikely } from './mostlikely.ts';
 import { OnCall } from './oncall.ts';
 import { Planning } from './planning.ts';
-import { Pong } from './pong.ts';
+import { Hockey } from './hockey.ts';
 import { TrickShot } from './pool.ts';
 import { Quiz } from './quiz.ts';
 import { PerfReview } from './review.ts';
@@ -41,6 +41,6 @@ export const FACTORIES: Record<string, GameFactory> = {
   incident: staged(Incident),
   planning: staged(Planning),
   oncall: (ctx, now) => new OnCall(ctx, now),
-  pong: (ctx, now) => new Pong(ctx, now),
+  hockey: (ctx, now) => new Hockey(ctx, now),
   pool: staged(TrickShot),
 };

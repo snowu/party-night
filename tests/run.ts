@@ -10,7 +10,7 @@ import { RACE } from '../shared/bird.ts';
 import { CATALOG } from '../shared/catalog.ts';
 import { simulate, rack, shoot, step as poolStep } from '../shared/pool.ts';
 import { TrickShot } from '../server/src/games/pool.ts';
-import { Pong } from '../server/src/games/pong.ts';
+import { Hockey } from '../server/src/games/hockey.ts';
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -57,15 +57,15 @@ check('course length is sane', Math.abs(courseLength(30) - 30 * 60 * 4.3) < 30 *
   check('trick shot opens on the classic table', layouts[0].name === 'Break Room Classic' && new Set(layouts.map(L => L.name)).size === 3);
 }
 
-// Ping Pong Royale: with nobody moving, balls get through and the round ends.
+// Air Hockey Royale: with nobody moving, pucks get through and the round ends.
 {
   let t = 0;
   const players = ['a', 'b', 'c'].map(id => ({ id, name: id, bot: false, performer: false }));
   const ctx: any = { rng: mulberry32(4), players, connected: () => true, changed() {}, event() {}, send() {}, toAll() {} };
-  const g = new Pong(ctx, t);
+  const g = new Hockey(ctx, t);
   while (!g.result && t < 200_000) { t += 33; g.onTick(t); }
-  check('pong: idle players get knocked out before the cap', !!g.result && t < 3000 + 90_000 && g.result.ranking.filter(r => r.place === 1).length === 1, `${t}ms`);
-  check('pong: balls stay on the table', g.balls.every(b => Math.sqrt(b.x * b.x + b.y * b.y) < 1.2));
+  check('hockey: idle players get knocked out before the cap', !!g.result && t < 3000 + 75_000 && g.result.ranking.filter(r => r.place === 1).length === 1, `${t}ms`);
+  check('hockey: pucks stay on the table', g.pucks.every(b => Math.sqrt(b.x * b.x + b.y * b.y) < 1.2));
 }
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ function runNight(games: string[], rounds: number, seed: number) {
         if (ans !== null) send(bob, { t: 'g', k: 'ans', i: v.stage, v: ans });
       }
       if (s.game.id === 'oncall' && v?.phase === 'live' && v.holder === 'bob') send(bob, { t: 'g', k: 'pass', to: 'alice' });
-      if (s.game.id === 'pong') send(bob, { t: 'g', k: 'pad', p: r() });
+      if (s.game.id === 'hockey') send(bob, { t: 'g', k: 'mallet', x: r() * 2 - 1, y: r() * 2 - 1 });
       if ((s.game.id === 'draw' || s.game.id === 'perform') && v?.artist !== 'bob' && r() < 0.05) send(bob, { t: 'g', k: 'guess', text: 'banana' });
       if (s.game.id === 'gallery' && v?.step === 'draw') for (const c of [alice, bob]) send(c, { t: 'g', k: 'ink', id: `s${Math.floor(r() * 1e6)}`, c: '#111111', w: 10, pts: [r() * 1000, r() * 1000, 500, 500] });
       if (s.game.id === 'gallery' && v?.step === 'vote' && v.myVote === null) send(bob, { t: 'g', k: 'vote', slot: v.mySlot === 0 ? 1 : 0 });
@@ -153,7 +153,7 @@ for (const [label, games, rounds] of [
   ['bird night', ['race'], 4],
   ['social night', ['quiz', 'approve', 'hottake', 'who', 'mostlikely', 'draw', 'perform', 'gallery'], 8],
   ['satire night', ['rootcause', 'hivemind', 'review', 'codereview', 'incident', 'oncall', 'planning'], 8],
-  ['perks night', ['pong', 'pool'], 4],
+  ['perks night', ['hockey', 'pool'], 4],
   ['mixed night', CATALOG.map(g => g.id), 12],
 ] as const) {
   const { room, alice, tv, hof } = runNight([...games], rounds, rounds * 31);
@@ -202,10 +202,10 @@ for (const [label, games, rounds] of [
   const room = new RoomCore('TRYS', () => t, {}, mulberry32(8));
   const a = client();
   room.join(a.conn, { pid: 'a', name: 'A' });
-  room.message(a.conn, JSON.stringify({ t: 'host', op: 'try', game: 'pong' }));
-  check('try: straight into the game with bots', room.phase === 'play' && room.gameId === 'pong' && room.participants.length >= 4);
+  room.message(a.conn, JSON.stringify({ t: 'host', op: 'try', game: 'hockey' }));
+  check('try: straight into the game with bots', room.phase === 'play' && room.gameId === 'hockey' && room.participants.length >= 4);
   while (room.history.length < 2 && t < 600_000) { t += 250; room.tick(); if (room.phase === 'results') room.message(a.conn, JSON.stringify({ t: 'host', op: 'next' })); }
-  check('try: keeps playing that one game', room.history.length === 2 && room.history.every(o => o.game === 'pong'), room.history.map(o => o.game).join(','));
+  check('try: keeps playing that one game', room.history.length === 2 && room.history.every(o => o.game === 'hockey'), room.history.map(o => o.game).join(','));
 }
 
 // Host handover: when the host leaves, the next human takes over.
