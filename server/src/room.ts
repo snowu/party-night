@@ -1,6 +1,6 @@
 // ─── ROOM CORE ────────────────────────────────────────────────────────────────
 // Everything a room knows, with no Cloudflare in sight: the Durable Object feeds it
-// sockets, messages and a tick every 250ms, and it answers through Conn.send.
+// sockets, messages and a tick every 250ms (faster while a game asks), and it answers through Conn.send.
 // The clock is injected, so tests can run a whole night in milliseconds.
 //
 // The room is the authority for the shell: who is host (the earliest-joined human
@@ -29,6 +29,7 @@ interface P extends Omit<PlayerPub, 'connected'> { conns: Set<Conn>; lastSeen: n
 
 export const INTRO_MS = 6000;
 export const RESULTS_MS = 14000;
+export const TICK_MS = 250;
 const LOBBY_DROP_MS = 30000;   // a human who left the lobby is forgotten after this
 export const HOF_MIN_HUMANS = 3;
 
@@ -261,6 +262,7 @@ export class RoomCore {
       event: text => this.event(text),
       send: (id, msg) => { const s = JSON.stringify(msg); for (const c of this.players.get(id)?.conns ?? []) c.send(s); },
       toAllBut: (id, msg) => { const s = JSON.stringify(msg); for (const c of this.conns) if (c.pid !== id) c.send(s); },
+      toAll: msg => { const s = JSON.stringify(msg); for (const c of this.conns) c.send(s); },
       changed: () => { this.dirty = true; },
     };
     this.game = FACTORIES[this.gameId](ctx, now);
@@ -337,6 +339,8 @@ export class RoomCore {
   }
 
   // ── clock ──────────────────────────────────────────────────────────────────
+  tickMs() { return (this.phase === 'play' && this.game?.tickMs) || TICK_MS; }
+
   tick() {
     const now = this.clock();
     if (this.phase === 'intro' && now >= this.phaseEndsAt) this.beginPlay(now);

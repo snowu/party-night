@@ -8,6 +8,9 @@ import { evaluate, makeCard, wildMatch } from '../server/src/games/approve.ts';
 import { mulberry32, placesByScore } from '../shared/points.ts';
 import { RACE } from '../shared/bird.ts';
 import { CATALOG } from '../shared/catalog.ts';
+import { simulate, rack, shoot, step as poolStep } from '../shared/pool.ts';
+import { TrickShot } from '../server/src/games/pool.ts';
+import { Pong } from '../server/src/games/pong.ts';
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -23,6 +26,7 @@ function fly(seed: number, ticks: number): GameState {
   for (let t = 0; t < ticks; t++) if (step(s, decide(s, brain, noise)).dead) bonk(s);
   return s;
 }
+const POOL_GOLDEN = '1s/386 1/963 0s/25';
 const GOLDEN: Array<[number, string]> = [
   [1, '15142.50|48|189.400|52'],
   [42, '15142.50|48|178.000|52'],
@@ -36,6 +40,33 @@ for (const [seed, want] of GOLDEN) {
 check('same seed, same course', JSON.stringify(raceState(7).pipes) === JSON.stringify(raceState(7).pipes));
 check('coins are seeded', [...Array(50).keys()].every(n => coinAt(9, n) === coinAt(9, n)));
 check('course length is sane', Math.abs(courseLength(30) - 30 * 60 * 4.3) < 30 * 60 * 0.5, String(courseLength(30)));
+
+// Trick Shot: the server scores a shot and every screen replays it, so the sim
+// must give the same answer every time, stepped all at once or frame by frame.
+{
+  const ctx: any = { rng: mulberry32(11), players: [], connected: () => true, changed() {}, event() {} };
+  const layouts = new TrickShot(ctx, 0).layouts;
+  const shots = [{ x: 3.9, y: 0.02 }, { x: 2.1, y: -1.3 }, { x: -1.7, y: 2.2 }];
+  const got = layouts.map((L, i) => { const r = simulate(L, shots[i]); return `${r.pots}${r.scratch ? 's' : ''}/${r.steps}`; }).join(' ');
+  check('trick shot replay', got === POOL_GOLDEN, `got ${got}`);
+  const t = rack(layouts[0]);
+  shoot(t, shots[0]);
+  for (let i = 0; i < 5000 && !t.done; i++) poolStep(t);
+  const all = simulate(layouts[0], shots[0]);
+  check('trick shot steps the same frame by frame', t.pots === all.pots && t.steps === all.steps && t.scratch === all.scratch);
+  check('trick shot opens on the classic table', layouts[0].name === 'Break Room Classic' && new Set(layouts.map(L => L.name)).size === 3);
+}
+
+// Ping Pong Royale: with nobody moving, balls get through and the round ends.
+{
+  let t = 0;
+  const players = ['a', 'b', 'c'].map(id => ({ id, name: id, bot: false, performer: false }));
+  const ctx: any = { rng: mulberry32(4), players, connected: () => true, changed() {}, event() {}, send() {}, toAll() {} };
+  const g = new Pong(ctx, t);
+  while (!g.result && t < 200_000) { t += 33; g.onTick(t); }
+  check('pong: idle players get knocked out before the cap', !!g.result && t < 3000 + 90_000 && g.result.ranking.filter(r => r.place === 1).length === 1, `${t}ms`);
+  check('pong: balls stay on the table', g.balls.every(b => Math.sqrt(b.x * b.x + b.y * b.y) < 1.2));
+}
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 check('ties share a place', JSON.stringify(placesByScore([5, 9, 9, 1], x => x).map(x => x.place)) === '[1,1,3,4]');
@@ -104,10 +135,12 @@ function runNight(games: string[], rounds: number, seed: number) {
           : id === 'hivemind' ? 'coffee' : id === 'planning' ? 100
           : id === 'review' ? (v.stage === 0 ? { s: ['shipped it', 'fixed it', 'documented it'], lie: 2 } : 0)
           : id === 'codereview' ? (v.stage === 0 ? (v.prompt ? 'synergy' : null) : 0)
-          : id === 'incident' ? (t >= v.fireAt ? 300 : null) : null;
+          : id === 'incident' ? (t >= v.fireAt ? 300 : null)
+          : id === 'pool' ? { x: 3.5, y: 0.1 * v.stage } : null;
         if (ans !== null) send(bob, { t: 'g', k: 'ans', i: v.stage, v: ans });
       }
       if (s.game.id === 'oncall' && v?.phase === 'live' && v.holder === 'bob') send(bob, { t: 'g', k: 'pass', to: 'alice' });
+      if (s.game.id === 'pong') send(bob, { t: 'g', k: 'pad', p: r() });
       if ((s.game.id === 'draw' || s.game.id === 'perform') && v?.artist !== 'bob' && r() < 0.05) send(bob, { t: 'g', k: 'guess', text: 'banana' });
       if (s.game.id === 'gallery' && v?.step === 'draw') for (const c of [alice, bob]) send(c, { t: 'g', k: 'ink', id: `s${Math.floor(r() * 1e6)}`, c: '#111111', w: 10, pts: [r() * 1000, r() * 1000, 500, 500] });
       if (s.game.id === 'gallery' && v?.step === 'vote' && v.myVote === null) send(bob, { t: 'g', k: 'vote', slot: v.mySlot === 0 ? 1 : 0 });
@@ -120,6 +153,7 @@ for (const [label, games, rounds] of [
   ['bird night', ['race'], 4],
   ['social night', ['quiz', 'approve', 'hottake', 'who', 'mostlikely', 'draw', 'perform', 'gallery'], 8],
   ['satire night', ['rootcause', 'hivemind', 'review', 'codereview', 'incident', 'oncall', 'planning'], 8],
+  ['perks night', ['pong', 'pool'], 4],
   ['mixed night', CATALOG.map(g => g.id), 12],
 ] as const) {
   const { room, alice, tv, hof } = runNight([...games], rounds, rounds * 31);

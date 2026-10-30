@@ -222,6 +222,19 @@ body.offline::after { content: "Reconnecting…"; position: fixed; top: 10px; le
 .gal-cap .voted { color: var(--green); font-weight: 800; }
 
 /* bird games */
+.pong { display: grid; justify-items: center; gap: 6px; }
+.pong-head { width: min(100%, 640px); }
+.pong canvas { width: min(100%, calc(100vh - 170px)); aspect-ratio: 1; touch-action: none; display: block; cursor: ew-resize; }
+.pong-foot { margin: 0; }
+.pool { display: grid; gap: 8px; }
+.pool-table { width: min(100%, calc((100vh - 280px) * 2.14 / 1.14)); aspect-ratio: 2.14 / 1.14; margin: 0 auto; display: block; border-radius: 12px; touch-action: none; }
+.pool-table.aiming { cursor: crosshair; }
+.pool-table[hidden] { display: none; }
+.pool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 10px; }
+.pool-grid:empty { display: none; }
+.pool-card { background: var(--panel); border-radius: 12px; padding: 6px; display: grid; gap: 6px; }
+.pool-card canvas { width: 100%; aspect-ratio: 2.14 / 1.14; border-radius: 8px; display: block; }
+.pool-cap { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 .bird { display: grid; justify-items: center; gap: 4px; }
 .bird canvas { width: min(100%, calc((100vh - 130px) * 1400 / 830)); aspect-ratio: 1400 / 830; border-radius: 14px; touch-action: none; display: block; cursor: pointer; }
 .bird p { margin: 0; }

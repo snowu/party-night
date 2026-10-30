@@ -4,7 +4,7 @@
 //                ?pid=&name= to play, ?tv=1 for the spectator screen.
 //   /api/hof     the hall of fame: one SQLite-backed object for every night's podium.
 import { DurableObject } from 'cloudflare:workers';
-import { RoomCore, type Conn, type HofRecord } from './room.ts';
+import { RoomCore, TICK_MS, type Conn, type HofRecord } from './room.ts';
 
 interface Env {
   ROOMS: DurableObjectNamespace<Room>;
@@ -14,7 +14,6 @@ interface Env {
 const CORS = { 'Access-Control-Allow-Origin': '*' };
 // The one hall-of-fame object. ('global' held the launch-day test nights.)
 const HOF_NAME = 'nights';
-const TICK_MS = 250;
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -33,6 +32,17 @@ export default {
 export class Room extends DurableObject<Env> {
   core: RoomCore | null = null;
   timer: ReturnType<typeof setInterval> | null = null;
+  every = TICK_MS;
+
+  // Tick at whatever rate the room wants right now (a pong round asks for 33ms).
+  run(core: RoomCore, ms = TICK_MS) {
+    if (this.timer) clearInterval(this.timer);
+    this.every = ms;
+    this.timer = setInterval(() => {
+      core.tick();
+      if (core.tickMs() !== this.every) this.run(core, core.tickMs());
+    }, ms);
+  }
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
@@ -58,7 +68,7 @@ export class Room extends DurableObject<Env> {
       };
       server.addEventListener('close', drop);
       server.addEventListener('error', drop);
-      this.timer ??= setInterval(() => core.tick(), TICK_MS);
+      if (!this.timer) this.run(core, core.tickMs());
     }
     return new Response(null, { status: 101, webSocket: client });
   }

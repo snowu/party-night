@@ -31,6 +31,11 @@ Each round is a random pick from the enabled games, with no repeats until they r
 | On-Call Rotation | Hot potato: pass the pager before a hidden timer goes off. Whoever holds it is out. |
 | Planning Poker | Estimate a number. Closest without going over wins. |
 
+| Office perks | |
+|---|---|
+| Ping Pong Royale | Everyone defends a slice of one round table. The server runs the physics; balls curve with spin, speed up and multiply. Each ball that gets past costs a life; last one standing wins. |
+| Trick Shot | One shot each on the same pool table, three tables (bumpers, trampoline rails, a bowling ball…). Balls potted score; sinking the white costs. Every shot is replayed side by side. |
+
 The host is the earliest-joined human still connected. They can add bots, pick the number of rounds and switch games on or off. Share rooms with `?room=CODE`. Open `?room=CODE&tv=1` for the spectator screen to share on the call: live standings, and a camera that follows the race leader.
 
 ## Run it locally
@@ -64,7 +69,7 @@ On localhost the page connects to `ws://<host>:8799`. On `*.github.io` it connec
 ## How it fits together
 
 ```
-shared/            protocol, catalog, points, bird-variant numbers (client + server)
+shared/            protocol, catalog, points, Bird Race numbers, pong geometry, the pool sim (client + server)
 server/src/
   index.ts         Worker: /ws/<CODE> → Room DO, /api/hof → HallOfFame DO (SQLite)
   room.ts          RoomCore: lobby, host, rotation, points, awards. Pure, clock-injected
@@ -75,9 +80,12 @@ src/
   shell/           lobby, intro, results, podium, photo finish
   games/bird/      physics-core.ts (from LPB, unchanged), race-core.ts (pure), client.ts
   games/social/    staged rounds (views.ts), Draw It / Hum & Mime (guess.ts), Draw Off (gallery.ts)
+  games/perks/     Ping Pong Royale (pong.ts), Trick Shot (pool.ts)
 ```
 
 - **The room (a Durable Object, one per code, in memory) is the authority** for the shell and for each round's result. Social rounds run entirely on the server. Their bots answer from the server too.
 - **Bird rounds run in the browsers.** Each client flies the seeded course. The host's browser also flies the bots, on `setInterval` so they keep going in background tabs.
   - Positions go peer to peer over the room's relay: 50ms batches, a 400ms heartbeat, dead reckoning in between.
   - Each client reports distance and finish to the server twice a second, and the server decides who finished, who is out and when the round closes. There is no anti-cheat: it's a party game.
+- **Ping Pong Royale runs on the server.** A game can ask for a faster tick (`tickMs`); the room ticks every 33ms during pong instead of 250ms, steps the physics at 120Hz and sends snapshots at 20Hz. Phones send only where they want their paddle, and move their own paddle locally at the server's speed. A paddle counts as there if it was there in the last ~130ms, so lag goes the defender's way.
+- **Trick Shot shares one deterministic sim** (`shared/pool.ts`: fixed steps, only `+ - * /` and `sqrt`). The server scores each shot with it; every screen replays the same shots from it, and `npm test` pins a golden replay.

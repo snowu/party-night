@@ -19,6 +19,7 @@ export interface GameCtx {
   event(text: string): void;                // toast on every screen
   send(id: string, msg: unknown): void;     // to one player's sockets
   toAllBut(id: string, msg: unknown): void; // every socket (spectators too) except one player's
+  toAll(msg: unknown): void;                // every socket, spectators too
   changed(): void;                          // ask for a state broadcast
 }
 
@@ -36,6 +37,7 @@ export interface ServerGame {
   view(forId: string | null, now: number): unknown;
   onJoin?(id: string | null, send: (msg: unknown) => void): void;  // a socket (re)connected mid-round
   result: RoundResult | null;               // set once the round is over
+  tickMs?: number;                          // a faster tick than the room's 250ms, for live physics
 }
 
 export type GameFactory = (ctx: GameCtx, now: number) => ServerGame;
