@@ -134,7 +134,19 @@ for (const [label, games, rounds] of [
     check(`${label}: draw off shows an anonymous gallery`, !!g && g.drawings.length === 2 && JSON.stringify(g).indexOf('alice') < 0 && voting?.gv.artists === null);
     check(`${label}: draw off scores the votes`, o.ranking.some(x => x.stat?.includes('vote')), o.headline);
   }
-  check(`${label}: hall of fame record`, !!hof && hof.podium.length === 2 && hof.podium.every((p: any) => !p.name.includes('Clippy')));
+  check(`${label}: two humans stay out of the hall of fame`, hof === null);
+}
+
+// A real retro (3+ humans) makes the hall of fame, bots excluded from the podium.
+{
+  let t = 0, hof: any = null;
+  const room = new RoomCore('HOFS', () => t, { onPodium: rec => { hof = rec; } }, mulberry32(3));
+  const cs = ['a', 'b', 'c'].map(id => { const c = client(); room.join(c.conn, { pid: id, name: id.toUpperCase() }); return c; });
+  room.message(cs[0].conn, JSON.stringify({ t: 'host', op: 'bot+' }));
+  room.message(cs[0].conn, JSON.stringify({ t: 'host', op: 'settings', rounds: 4, games: ['quiz'] }));
+  room.message(cs[0].conn, JSON.stringify({ t: 'host', op: 'start' }));
+  while (room.phase !== 'podium' && t < 3_600_000) { t += 250; room.tick(); }
+  check('3 humans make the hall of fame, bots excluded', !!hof && hof.podium.length === 3 && hof.podium.every((p: any) => p.name.length === 1));
 }
 
 // Host handover: when the host leaves, the next human takes over.

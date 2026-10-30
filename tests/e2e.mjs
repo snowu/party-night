@@ -61,7 +61,8 @@ while (Date.now() - t0 < 8 * 60_000) {
         const btn = await p.$('#game button.opt:not([disabled])');
         if (btn) await btn.click().catch(() => {});
         const num = await p.$('#num');
-        if (num) { await num.fill('2000'); await num.press('Enter'); }
+        // The field can re-render between fill and Enter; the next pass just tries again.
+        if (num) await num.fill('2000').then(() => num.press('Enter')).catch(() => {});
         // Drawing rounds: scribble a stroke on whichever pad is showing, then vote.
         const pad = await p.$('.gal-pad canvas, .g-board canvas');
         const box = pad && await pad.boundingBox();

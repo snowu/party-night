@@ -12,13 +12,15 @@ interface Env {
 }
 
 const CORS = { 'Access-Control-Allow-Origin': '*' };
+// The one hall-of-fame object. ('global' held the launch-day test nights.)
+const HOF_NAME = 'nights';
 const TICK_MS = 250;
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === '/api/hof') {
-      const hof = env.HOF.get(env.HOF.idFromName('global'));
+      const hof = env.HOF.get(env.HOF.idFromName(HOF_NAME));
       return Response.json(await hof.list(), { headers: CORS });
     }
     const m = url.pathname.match(/^\/ws\/([A-Z]{4})$/);
@@ -36,7 +38,7 @@ export class Room extends DurableObject<Env> {
     const url = new URL(req.url);
     const code = url.pathname.slice(-4);
     this.core ??= new RoomCore(code, Date.now, {
-      onPodium: rec => { this.ctx.waitUntil(this.env.HOF.get(this.env.HOF.idFromName('global')).add(rec).catch(() => {})); },
+      onPodium: rec => { this.ctx.waitUntil(this.env.HOF.get(this.env.HOF.idFromName(HOF_NAME)).add(rec).catch(() => {})); },
     });
     const core = this.core;
     const [client, server] = Object.values(new WebSocketPair());

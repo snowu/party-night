@@ -30,6 +30,7 @@ interface P extends Omit<PlayerPub, 'connected'> { conns: Set<Conn>; lastSeen: n
 export const INTRO_MS = 6000;
 export const RESULTS_MS = 14000;
 const LOBBY_DROP_MS = 30000;   // a human who left the lobby is forgotten after this
+export const HOF_MIN_HUMANS = 3;
 
 export class RoomCore {
   players = new Map<string, P>();
@@ -285,7 +286,10 @@ export class RoomCore {
     this.phaseEndsAt = 0;
     this.nightAwards = this.computeNightAwards();
     this.dirty = true;
-    if (this.history.length) this.hooks.onPodium?.({
+    // Real retros only: a night needs 3+ humans to make the hall of fame, so solo and
+    // two-person test runs never land in it.
+    const humans = [...this.players.values()].filter(p => !p.bot).length;
+    if (this.history.length && humans >= HOF_MIN_HUMANS) this.hooks.onPodium?.({
       at: now, code: this.code, rounds: this.history.length,
       podium: this.standings().filter(p => !p.bot).slice(0, 3).map(p => ({ name: p.name, avatar: p.avatar, points: p.points })),
     });
