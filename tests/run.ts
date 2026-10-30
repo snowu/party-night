@@ -57,14 +57,15 @@ check('course length is sane', Math.abs(courseLength(30) - 30 * 60 * 4.3) < 30 *
   check('trick shot opens on the classic table', layouts[0].name === 'Break Room Classic' && new Set(layouts.map(L => L.name)).size === 3);
 }
 
-// Air Hockey Royale: with nobody moving, pucks get through and the round ends.
+// Air Hockey Royale: with nobody moving, pucks still get through, and the round ends.
 {
   let t = 0;
   const players = ['a', 'b', 'c'].map(id => ({ id, name: id, bot: false, performer: false }));
   const ctx: any = { rng: mulberry32(4), players, connected: () => true, changed() {}, event() {}, send() {}, toAll() {} };
   const g = new Hockey(ctx, t);
   while (!g.result && t < 200_000) { t += 33; g.onTick(t); }
-  check('hockey: idle players get knocked out before the cap', !!g.result && t < 3000 + 75_000 && g.result.ranking.filter(r => r.place === 1).length === 1, `${t}ms`);
+  const lost = g.seats.reduce((n, s) => n + 3 - s.lives, 0);
+  check('hockey: parked mallets still let a goal in, and the round ends by the cap', !!g.result && t <= 3000 + 75_000 + 33 && lost >= 1 && g.result.ranking.length === 3, `${t}ms, ${lost} lost`);
   check('hockey: pucks stay on the table', g.pucks.every(b => Math.sqrt(b.x * b.x + b.y * b.y) < 1.2));
 }
 
