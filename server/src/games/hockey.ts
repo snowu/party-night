@@ -18,6 +18,7 @@ const HIT = 0.9;                 // how much of a hit the puck keeps (1 = perfec
 const BALL_EVERY_MS = 8000, MAX_PUCKS = 6, RESPAWN_MS = 1000;
 const HISTORY = 4;               // mallet samples kept (~130ms at 33ms ticks)
 const MIN_INWARD = 0.25;         // a wall bounce always sends a puck at least this much back in
+const BOT_SPEED = 3.2;           // bots' mallets are slower than a hand, by design
 const KMH = 40;                  // table units a second → km/h, for the Slapshot award
 
 type V = [number, number];
@@ -107,7 +108,7 @@ export class Hockey implements ServerGame {
     for (const s of this.seats) {
       if (s.out) continue;
       const before = s.m;
-      s.m = approach(s.m, s.target, DT, s.bot ? HOCKEY.malletSpeed * (0.45 + 0.45 * s.bot.skill) : HOCKEY.malletSpeed);
+      s.m = approach(s.m, s.target, DT, s.bot ? BOT_SPEED * (0.45 + 0.45 * s.bot.skill) : HOCKEY.malletSpeed);
       s.vel = [(s.m[0] - before[0]) / DT, (s.m[1] - before[1]) / DT];
     }
     for (const b of this.pucks) {

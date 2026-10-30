@@ -10,7 +10,7 @@ export const HOCKEY = {
   goal: 0.4,              // share of a slice's rim that is goal mouth…
   goalMax: 0.5,           // …but never wider than this (radians): about three mallets
   zoneIn: 0.42,           // mallets stay outside this radius
-  malletSpeed: 3.2,       // table units a second
+  malletSpeed: 10,        // table units a second: fast enough to keep up with a hand
   puckR: 0.045,
   bigR: 0.07,
   lives: (n: number) => n <= 3 ? 3 : n <= 7 ? 2 : 1,   // a big table needs fewer to get through
