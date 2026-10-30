@@ -6,7 +6,7 @@
 //
 // The table is 2 × 1 with six pockets: the corners and the middle of each long rail.
 
-export const POOL = { w: 2, h: 1, r: 0.03, maxSpeed: 6, bounce: 0.99, dt: 1 / 120, maxSteps: 120 * 10 };
+export const POOL = { w: 2, h: 1, r: 0.03, maxSpeed: 5.5, bounce: 0.99, dt: 1 / 120, maxSteps: 120 * 10 };
 export const POCKETS: Array<[number, number]> = [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]];
 
 export interface Layout {
@@ -40,9 +40,6 @@ export function shoot(t: Table, s: Shot) {
   t.balls[0].vx = s.x;
   t.balls[0].vy = s.y;
 }
-
-const nearPocket = (L: Layout, b: Ball, extra: number) =>
-  POCKETS.some(([px, py]) => (b.x - px) * (b.x - px) + (b.y - py) * (b.y - py) < (L.pocket + extra) * (L.pocket + extra));
 
 function cap(b: Ball) {
   const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
@@ -87,15 +84,12 @@ export function step(t: Table) {
       if (vn < 0) { b.vx -= (1 + L.kick) * vn * nx; b.vy -= (1 + L.kick) * vn * ny; cap(b); }
       b.x = px + nx * min; b.y = py + ny * min;
     }
-    // In a pocket, or past the rail line through a pocket's mouth: it dropped.
-    const off = b.x < 0 || b.x > POOL.w || b.y < 0 || b.y > POOL.h;
-    if (off || POCKETS.some(([px, py]) => (b.x - px) * (b.x - px) + (b.y - py) * (b.y - py) < L.pocket * L.pocket)) {
+    // A ball drops only once its centre is inside a pocket; everywhere else is rail.
+    if (POCKETS.some(([px, py]) => (b.x - px) * (b.x - px) + (b.y - py) * (b.y - py) < L.pocket * L.pocket)) {
       b.in = true; b.vx = 0; b.vy = 0;
       if (b.n === 0) t.scratch = true; else t.pots++;
       continue;
     }
-    // Rails, except across a pocket's mouth.
-    if (nearPocket(L, b, b.r)) continue;
     if (b.x < b.r) { b.x = b.r; b.vx = -b.vx * L.rail; cap(b); }
     if (b.x > POOL.w - b.r) { b.x = POOL.w - b.r; b.vx = -b.vx * L.rail; cap(b); }
     if (b.y < b.r) { b.y = b.r; b.vy = -b.vy * L.rail; cap(b); }

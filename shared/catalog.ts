@@ -5,6 +5,7 @@ import type { GameInfo } from './protocol.ts';
 export interface CatalogEntry extends GameInfo {
   minPlayers: number;      // humans + bots
   needs?: 'artist' | 'performer' | 'artists';   // one human artist, an opted-in performer, or 2+ humans
+  optIn?: boolean;         // unticked in a new lobby: niche enough that the host should choose it
 }
 
 export const CATALOG: CatalogEntry[] = [
@@ -12,7 +13,7 @@ export const CATALOG: CatalogEntry[] = [
     how: 'Tap, click or Space to flap. Thread a 🎯 coin to hit whoever is leading.' },
   { id: 'quiz', kind: 'social', minPlayers: 1, title: 'Pop Quiz', blurb: 'Five questions. Faster right answers score more.',
     how: 'Pick an answer before the bar runs out. The last one is a closest-number guess.' },
-  { id: 'approve', kind: 'social', minPlayers: 1, title: 'Approve or Deny', blurb: 'An IAM policy, a request, six seconds. Decide.',
+  { id: 'approve', kind: 'social', minPlayers: 1, optIn: true, title: 'Approve or Deny', blurb: 'An IAM policy, a request, six seconds. Decide.',
     how: 'Explicit Deny beats Allow. No matching Allow means Deny. Wildcards match.' },
   { id: 'hottake', kind: 'social', minPlayers: 2, title: 'Hot Takes', blurb: 'Agree or disagree, then guess how many of the team agree with you.',
     how: 'Vote, then drag the slider to the share of the team you think agrees.' },
@@ -47,4 +48,4 @@ export const CATALOG: CatalogEntry[] = [
 ];
 
 export const gameById = (id: string) => CATALOG.find(g => g.id === id);
-export const DEFAULT_GAMES = CATALOG.map(g => g.id);
+export const DEFAULT_GAMES = CATALOG.filter(g => !g.optIn).map(g => g.id);

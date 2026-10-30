@@ -13,7 +13,7 @@ Each round is a random pick from the enabled games, with no repeats until they r
 | Social rounds | |
 |---|---|
 | Pop Quiz | Four questions, plus a closest-number question at the end. |
-| Approve or Deny | Generated IAM policies. Explicit Deny wins, then Allow, otherwise implicit deny. |
+| Approve or Deny | Generated IAM policies. Explicit Deny wins, then Allow, otherwise implicit deny. Off by default (it needs AWS know-how); the host can tick it. |
 | Hot Takes | Agree or disagree, then guess the share of the team that agrees. |
 | Who Wrote It? | Everyone answers a prompt, then guesses who wrote each answer. |
 | Most Likely To | Vote for a teammate. Agreeing with the room scores. |

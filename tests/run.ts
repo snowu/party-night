@@ -26,7 +26,7 @@ function fly(seed: number, ticks: number): GameState {
   for (let t = 0; t < ticks; t++) if (step(s, decide(s, brain, noise)).dead) bonk(s);
   return s;
 }
-const POOL_GOLDEN = '3/864 1s/1200 0s/25';
+const POOL_GOLDEN = '0/749 0s/1200 0/789';
 const GOLDEN: Array<[number, string]> = [
   [1, '15142.50|48|189.400|52'],
   [42, '15142.50|48|178.000|52'],

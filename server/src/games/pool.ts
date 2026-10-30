@@ -11,7 +11,7 @@ const POT = 250, SCRATCH = 250, BEST = 250;
 const R = POOL.r;
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
-const base = { cue: [0.45, 0.5] as [number, number], cueR: R, cueM: 1, pegs: [] as Layout['pegs'], kick: 1, rail: 0.85, friction: 0.12, drag: 0.15, pocket: 0.078 };
+const base = { cue: [0.45, 0.5] as [number, number], cueR: R, cueM: 1, pegs: [] as Layout['pegs'], kick: 1, rail: 0.85, friction: 0.14, drag: 0.17, pocket: 0.06 };
 
 // A triangle rack pointing at the cue ball, apex at (x, y).
 function triangle(x: number, y: number, rows: number, gap = 0.002): Array<[number, number]> {
@@ -40,7 +40,7 @@ const LAYOUTS: Array<(rng: () => number) => Layout> = [
     return { ...base, name: 'Pinball Wizard', tag: 'Someone installed bumpers. Nobody asked why.', pegs, kick: 1.3, balls: scatter(rng, 7, [[0.45, 0.5, R], ...pegs]) };
   },
   () => ({ ...base, name: 'Bowling Night', tag: 'Wrong ball. Roll with it.', cue: [0.35, 0.5], cueR: 0.07, cueM: 4, balls: triangle(1.35, 0.5, 4, 0.03) }),
-  rng => ({ ...base, name: 'Black Hole Pockets', tag: 'Pockets the size of the backlog. Something will go in.', pocket: 0.13, balls: scatter(rng, 8, [[0.45, 0.5, R]]) }),
+  rng => ({ ...base, name: 'Black Hole Pockets', tag: 'Pockets the size of the backlog. Something will go in.', pocket: 0.095, balls: scatter(rng, 8, [[0.45, 0.5, R]]) }),
 ];
 
 export class TrickShot extends StagedGame {
