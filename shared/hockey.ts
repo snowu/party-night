@@ -91,6 +91,12 @@ export function moveMallet(m: Mallet, nx: number, ny: number, dtSec: number, smo
   m.x = nx; m.y = ny;
 }
 
+// Move a mallet up to `step` towards (tx, ty).
+export function chase(m: Mallet, tx: number, ty: number, step: number, dtSec: number, smooth?: number) {
+  const dx = tx - m.x, dy = ty - m.y, d = len(dx, dy), k = d > step ? step / d : 1;
+  moveMallet(m, m.x + dx * k, m.y + dy * k, dtSec, smooth);
+}
+
 export type Phase = 'count' | 'play' | 'break';
 export interface TableView {
   ids: [string, string];

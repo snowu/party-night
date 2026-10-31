@@ -6,7 +6,7 @@
 // The puck is run by whoever's half it's in (shared/hockey.ts): the phones send
 // it on, the server relays it, keeps score, and runs it itself for a bot's half
 // or for a phone that has gone quiet.
-import { HOCKEY, clampMallet, homeOf, moveMallet, sideOf, stageLabel, stepPuck, type HockeyView, type Mallet, type Phase, type Puck } from '../../../shared/hockey.ts';
+import { HOCKEY, chase, clampMallet, homeOf, moveMallet, sideOf, stageLabel, stepPuck, type HockeyView, type Mallet, type Phase, type Puck } from '../../../shared/hockey.ts';
 import { placesByScore } from '../../../shared/points.ts';
 import type { Award } from '../../../shared/protocol.ts';
 import { mostAward, pick, shuffle, type GameCtx, type RoundResult, type ServerGame } from './types.ts';
@@ -59,6 +59,8 @@ export class Hockey implements ServerGame {
 
   name(id: string) { return this.ctx.players.find(p => p.id === id)?.name ?? '?'; }
   isBot(id: string) { return !!this.ctx.players.find(p => p.id === id)?.bot; }
+  // A bot, or a player whose phone dropped: the server plays for them.
+  absent(id: string) { return this.isBot(id) || !this.ctx.connected(id); }
   add(m: Map<string, number>, id: string, n = 1) { m.set(id, (m.get(id) ?? 0) + n); }
 
   // Pair up whoever is still in; an odd one out goes straight through.
@@ -105,7 +107,7 @@ export class Hockey implements ServerGame {
   // Does the server run this side's half (a bot, or a phone that isn't sending)?
   serverRuns(t: Table, s: number, now: number) {
     const side = t.sides[s];
-    return this.isBot(side.id) || !this.ctx.connected(side.id) || now - Math.max(t.ownSince, side.lastP) > QUIET_MS;
+    return this.absent(side.id) || now - Math.max(t.ownSince, side.lastP) > QUIET_MS;
   }
 
   onMessage(from: string, msg: any, now: number) {
@@ -180,10 +182,7 @@ export class Hockey implements ServerGame {
   }
 
   run(t: Table, now: number) {
-    for (const s of [0, 1]) {
-      const side = t.sides[s];
-      if (this.isBot(side.id) || !this.ctx.connected(side.id)) this.aim(t, s, now);
-    }
+    for (const s of [0, 1]) if (this.absent(t.sides[s].id)) this.aim(t, s, now);
     if (t.goal >= 0) {
       if (now < t.resumeAt) return;
       this.drop(t, t.goal, now);
@@ -223,9 +222,8 @@ export class Hockey implements ServerGame {
           : clampMallet(s, p.x - (dx / d) * 0.2 + noise(), p.y - (dy / d) * 0.2 + noise());
       } else side.target = clampMallet(s, HOCKEY.W / 2 + (p.x - HOCKEY.W / 2) * 0.6 + noise(), gy + dir * 0.25);
     }
-    const speed = 1.1 + 0.9 * side.skill, dt = this.tickMs / 1000;
-    const dx = side.target[0] - side.m.x, dy = side.target[1] - side.m.y, d = Math.sqrt(dx * dx + dy * dy), step = Math.min(d, speed * dt);
-    moveMallet(side.m, side.m.x + (d ? (dx / d) * step : 0), side.m.y + (d ? (dy / d) * step : 0), dt, 0.6);
+    const dt = this.tickMs / 1000;
+    chase(side.m, side.target[0], side.target[1], (1.1 + 0.9 * side.skill) * dt, dt, 0.6);
   }
 
   finish() {

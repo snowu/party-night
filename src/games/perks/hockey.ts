@@ -7,7 +7,7 @@
 //
 // The puck runs on setInterval, not requestAnimationFrame, so it keeps going
 // (briefly) in a background tab; the server takes over if the phone goes quiet.
-import { GOAL0, GOAL1, HOCKEY, clampMallet, homeOf, moveMallet, sideOf, stepPuck, type HockeyFrame, type HockeyView, type Mallet, type Puck } from '../../../shared/hockey.ts';
+import { GOAL0, GOAL1, HOCKEY, chase, clampMallet, homeOf, moveMallet, sideOf, stepPuck, type HockeyFrame, type HockeyView, type Mallet, type Puck } from '../../../shared/hockey.ts';
 import { chip, countdown, esc, timer, tickTimers, type App, type GameClient } from '../../app.ts';
 
 const RIM = 0.06;                // drawn rail, table units
@@ -15,6 +15,8 @@ const RIM = 0.06;                // drawn rail, table units
 // fast but never faster than FOLLOW_MAX. It moves in SUBSTEPS per physics step so a
 // fast swing can't pass through the puck.
 const FOLLOW = 22, FOLLOW_MAX = 7, SUBSTEPS = 3;
+const SWING_S = 0.02;            // my swing speed is smoothed over about this long
+const BEHIND_MS = 200;           // a puck I take over is run on from at most this far back
 const KEY_SPEED = 1.8;
 const SIM_MS = 8;
 const DELAY_MS = 80;             // what I don't run myself is drawn this far in the past, smoothly
@@ -81,8 +83,8 @@ function drawTable(cv: HTMLCanvasElement, mallets: Array<{ x: number; y: number 
 export const hockeyGame = (): GameClient => {
   let root: HTMLElement, app: App, big: HTMLCanvasElement;
   let raf = 0, sim = 0, lastSim = 0, lastSentM = 0, lastSentP = 0, sentM = '';
-  const frames: number[][] = [];
   const buf: HockeyFrame[] = [];   // recent snapshots, for drawing in the past
+  const latest = () => buf[buf.length - 1]?.T ?? [];
   // My table.
   let puck: P | null = null, owner = false, simAt = 0, myLastAt = 0;
   let mine: Mallet | null = null, target: [number, number] | null = null;
@@ -116,7 +118,6 @@ export const hockeyGame = (): GameClient => {
   const predicted = (now: number): Puck | null => (puck ? (owner ? puck : ahead(puck, now)) : null);
 
   function onFrame(f: HockeyFrame) {
-    frames.length = 0; frames.push(...f.T);
     buf.push(f);
     if (buf.length > 15) buf.shift();
     const v = gv();
@@ -128,13 +129,13 @@ export const hockeyGame = (): GameClient => {
     const was = predicted(now);
     if (!puck || p.n !== puck.n) {
       // Puck down (start, or after a goal): jump straight there.
-      puck = { ...p }; owner = sideOf(p.y) === s; simAt = Math.max(p.at, now - 200); myLastAt = 0;
+      puck = { ...p }; owner = sideOf(p.y) === s; simAt = Math.max(p.at, now - BEHIND_MS); myLastAt = 0;
       off = { x: 0, y: 0 };
       return;
     }
     if (!owner && p.at >= myLastAt) {
       puck = { ...p };
-      if (sideOf(p.y) === s) { owner = true; simAt = Math.max(p.at, now - 200); }
+      if (sideOf(p.y) === s) { owner = true; simAt = Math.max(p.at, now - BEHIND_MS); }
       // Don't snap to the correction: keep drawing where it was and let the gap fade.
       const is = predicted(now);
       if (was && is) off = { x: off.x + was.x - is.x, y: off.y + was.y - is.y };
@@ -159,9 +160,8 @@ export const hockeyGame = (): GameClient => {
 
   function follow(sec: number) {
     if (!mine || !target || sec <= 0) return;
-    const dx = target[0] - mine.x, dy = target[1] - mine.y, d = Math.sqrt(dx * dx + dy * dy);
-    const step = Math.min(d, d * (1 - Math.exp(-FOLLOW * sec)), FOLLOW_MAX * sec);
-    moveMallet(mine, mine.x + (d ? (dx / d) * step : 0), mine.y + (d ? (dy / d) * step : 0), sec, 1 - Math.exp(-sec / 0.02));
+    const d = Math.hypot(target[0] - mine.x, target[1] - mine.y);
+    chase(mine, target[0], target[1], Math.min(d * (1 - Math.exp(-FOLLOW * sec)), FOLLOW_MAX * sec), sec, 1 - Math.exp(-sec / SWING_S));
   }
 
   function tick() {
@@ -182,8 +182,9 @@ export const hockeyGame = (): GameClient => {
       lastSentM = now; sentM = key;
       app.net.game({ k: 'm', x: +mine.x.toFixed(3), y: +mine.y.toFixed(3) });
     }
-    if (!live() || !owner || !puck) {
-      if (!live()) simAt = now;   // nothing moves before the puck drops
+    const on = live();
+    if (!on || !owner || !puck) {
+      if (!on) simAt = now;   // nothing moves before the puck drops
       follow(dt);
       return;
     }
@@ -273,12 +274,12 @@ export const hockeyGame = (): GameClient => {
     const fade = Math.exp(-Math.min(0.1, (t - (lastDraw || t)) / 1000) / SETTLE_S);
     lastDraw = t;
     off = { x: off.x * fade, y: off.y * fade };
-    if (v.me && frames[v.me.t]) {
+    if (v.me && latest()[v.me.t]) {
       const tb = v.tables[v.me.t], s = v.me.s;
       const late = interp(v.me.t, now - DELAY_MS);
       const them = late ? rowOf(late).m[1 - s] : opp;
       const ms = [0, 1].map(i => (i === s && mine ? mine : them));
-      const p = predicted(now), raw = frames[v.me.t];
+      const p = predicted(now), raw = latest()[v.me.t];
       const conceded = raw[10] >= 0 ? raw[10] : myGoalN === puck?.n ? s : -1;
       const shown = bigPuck(v.me.t, puck?.n ?? 0, conceded, p && { ...p, x: p.x + off.x, y: p.y + off.y }, tb.ids);
       drawTable(big, ms, shown, pair(tb.ids), s === 1, s);
@@ -300,6 +301,8 @@ export const hockeyGame = (): GameClient => {
   }
 
   const score = (t: HockeyView['tables'][number], a: number) => `${chip(app.player(t.ids[a]))}<b class="hk-score">${t.score[a]}</b>`;
+  // A table's scoreboard, the player at the top of the table first.
+  const vs = (t: HockeyView['tables'][number], top: number) => `<div class="hk-vs">${score(t, top)}<span class="muted">vs</span>${score(t, 1 - top)}</div>`;
 
   const client: GameClient = {
     mount(r, a) {
@@ -324,7 +327,7 @@ export const hockeyGame = (): GameClient => {
       const now = app.now();
       // A new bracket round: fresh table, fresh grid.
       const key = `${v.stage}`;
-      if (key !== gridKey) { gridKey = key; focus = -1; puck = null; owner = false; mine = null; oppAt = 0; frames.length = 0; buf.length = 0; off = { x: 0, y: 0 }; }
+      if (key !== gridKey) { gridKey = key; focus = -1; puck = null; owner = false; mine = null; oppAt = 0; buf.length = 0; off = { x: 0, y: 0 }; }
       const clock = v.phase === 'count' ? `<span class="hk-count">Puck drop in ${countdown(v.startAt)}</span>`
         : v.phase === 'break' ? `<span class="muted">Next round in ${countdown(v.nextAt)}</span>`
         : now < v.endAt ? timer(v.endAt, HOCKEY.matchMs) : '<span class="hk-ot">⚡ Golden goal</span>';
@@ -337,8 +340,8 @@ export const hockeyGame = (): GameClient => {
       const watching = !mt && shown >= 0 && v.tables[shown];
       big.hidden = !mt && !watching;
       // My scoreboard (opponent first: they're at the top of my table).
-      set('.hk-board', mt ? `<div class="hk-vs">${score(mt, 1 - v.me!.s)}<span class="muted">vs</span>${score(mt, v.me!.s)}</div>`
-        : watching ? `<div class="hk-vs">${score(v.tables[shown], 1)}<span class="muted">vs</span>${score(v.tables[shown], 0)}</div>${only ? '' : '<button class="ghost hk-back" data-table="-1">← All tables</button>'}` : '');
+      set('.hk-board', mt ? vs(mt, 1 - v.me!.s)
+        : watching ? `${vs(v.tables[shown], 1)}${only ? '' : '<button class="ghost hk-back" data-table="-1">← All tables</button>'}` : '');
       // The grid: every table, when I'm not playing and not watching one big.
       const showGrid = !mt && !watching;
       const gk = showGrid ? `${v.stage}:${v.tables.length}` : '';
