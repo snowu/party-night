@@ -22,11 +22,11 @@ export const HOCKEY = {
   tickMs: 33,             // the room ticks this fast while an air hockey round is on
   sendMs: 33,             // mallet and puck updates from whoever has them
   dt: 1 / 120,
-  maxPuck: 2.6,           // the whole table in about three quarters of a second
-  maxSwing: 2,            // a mallet never hits harder than this
+  maxPuck: 2.8,           // the whole table in about three quarters of a second
+  maxSwing: 3.5,          // a mallet never hits harder than this
   glide: 0.3,             // share of speed lost per second: it's an air table, but not ice
   rail: 0.9,              // share of speed kept off a rail
-  hit: 0.8,               // share of a hit the puck keeps
+  hit: 0.3,               // bounce off a mallet: low, so a slow push nudges and only a swing fires it
 };
 
 export interface Puck { x: number; y: number; vx: number; vy: number }

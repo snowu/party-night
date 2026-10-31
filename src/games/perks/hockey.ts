@@ -11,7 +11,10 @@ import { GOAL0, GOAL1, HOCKEY, clampMallet, homeOf, moveMallet, sideOf, stepPuck
 import { chip, countdown, esc, timer, tickTimers, type App, type GameClient } from '../../app.ts';
 
 const RIM = 0.06;                // drawn rail, table units
-const MY_SPEED = 12;             // my mallet chases the pointer this fast (units/s)
+// My mallet follows the pointer on a spring: small moves slow and precise, big ones
+// fast but never faster than FOLLOW_MAX. It moves in SUBSTEPS per physics step so a
+// fast swing can't pass through the puck.
+const FOLLOW = 22, FOLLOW_MAX = 7, SUBSTEPS = 3;
 const KEY_SPEED = 1.8;
 const SIM_MS = 8;
 const DELAY_MS = 80;             // what I don't run myself is drawn this far in the past, smoothly
@@ -154,6 +157,13 @@ export const hockeyGame = (): GameClient => {
     app.net.game({ k: 'p', x: +puck.x.toFixed(4), y: +puck.y.toFixed(4), vx: +puck.vx.toFixed(4), vy: +puck.vy.toFixed(4), at: myLastAt, n: puck.n });
   }
 
+  function follow(sec: number) {
+    if (!mine || !target || sec <= 0) return;
+    const dx = target[0] - mine.x, dy = target[1] - mine.y, d = Math.sqrt(dx * dx + dy * dy);
+    const step = Math.min(d, d * (1 - Math.exp(-FOLLOW * sec)), FOLLOW_MAX * sec);
+    moveMallet(mine, mine.x + (d ? (dx / d) * step : 0), mine.y + (d ? (dy / d) * step : 0), sec, 1 - Math.exp(-sec / 0.02));
+  }
+
   function tick() {
     const v = gv(), now = app.now();
     const dt = Math.min(0.1, (now - (lastSim || now)) / 1000);
@@ -167,20 +177,25 @@ export const hockeyGame = (): GameClient => {
       if (s === 1) { kx = -kx; ky = -ky; }
       target = clampMallet(s, target![0] + kx * KEY_SPEED * dt, target![1] + ky * KEY_SPEED * dt);
     }
-    const dx = target![0] - mine.x, dy = target![1] - mine.y, d = Math.sqrt(dx * dx + dy * dy), step = Math.min(d, MY_SPEED * dt);
-    moveMallet(mine, mine.x + (d ? (dx / d) * step : 0), mine.y + (d ? (dy / d) * step : 0), dt);
     const key = `${mine.x.toFixed(3)},${mine.y.toFixed(3)}`;
     if (now - lastSentM >= HOCKEY.sendMs && key !== sentM) {
       lastSentM = now; sentM = key;
       app.net.game({ k: 'm', x: +mine.x.toFixed(3), y: +mine.y.toFixed(3) });
     }
-    if (!live()) { simAt = now; return; }   // nothing moves before the puck drops
-    if (!owner || !puck) return;
+    if (!live() || !owner || !puck) {
+      if (!live()) simAt = now;   // nothing moves before the puck drops
+      follow(dt);
+      return;
+    }
     const mallets = s === 0 ? [mine, opp] : [opp, mine];
     while (simAt + HOCKEY.dt * 1000 <= now) {
       simAt += HOCKEY.dt * 1000;
       puck.at = simAt;
-      const g = stepPuck(puck, mallets);
+      let g = -1;
+      for (let i = 0; i < SUBSTEPS && g < 0; i++) {
+        follow(HOCKEY.dt / SUBSTEPS);
+        g = stepPuck(puck, mallets, HOCKEY.dt / SUBSTEPS);
+      }
       if (g === s) { owner = false; myGoalN = puck.n; app.net.game({ k: 'goal', n: puck.n }); return; }
       if (sideOf(puck.y) !== s) { owner = false; sendPuck(now); return; }
     }
