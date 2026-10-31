@@ -190,7 +190,7 @@ export const hockeyGame = (): GameClient => {
   // Pointer → table units, undoing the turn for side 1.
   function onPointer(e: PointerEvent) {
     const v = gv();
-    if (!v?.me || !live() && v.phase !== 'count') return;
+    if (!v?.me || !live() && v.phase !== 'count' || big.hidden) return;
     const r = big.getBoundingClientRect(), u = r.width / (HOCKEY.W + 2 * RIM);
     let x = (e.clientX - r.left) / u - RIM, y = (e.clientY - r.top) / u - RIM;
     if (v.me.s === 1) { x = HOCKEY.W - x; y = HOCKEY.L - y; }
@@ -292,7 +292,8 @@ export const hockeyGame = (): GameClient => {
       root.className = 'hockey';
       root.innerHTML = `<div class="hk-head"></div><div class="hk-board"></div><canvas class="hk-big"></canvas><div class="hk-grid"></div><div class="hk-foot"></div>`;
       big = root.querySelector('.hk-big')!;
-      big.addEventListener('pointermove', onPointer);
+      // On the window, so a mouse that slips off the table keeps the mallet at its edge.
+      window.addEventListener('pointermove', onPointer);
       big.addEventListener('pointerdown', onPointer);
       root.addEventListener('click', onClick);
       window.addEventListener('keydown', onKey);
@@ -350,6 +351,7 @@ export const hockeyGame = (): GameClient => {
     unmount() {
       cancelAnimationFrame(raf);
       clearInterval(sim);
+      window.removeEventListener('pointermove', onPointer);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKey);
       root.removeEventListener('click', onClick);
