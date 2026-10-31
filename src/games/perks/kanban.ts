@@ -8,6 +8,7 @@ import { canPlay } from '../social/wrap.ts';
 
 const LINE = 0.8;                // the line, as a share of the board's height
 const SHOW_MS = 600;             // a landed ticket shows ✓ or ✗ this long
+const REACH = 40;                // a touch this close to a ticket (px) grabs it: fingers are fat
 const center = (col: number) => (col + 0.5) / 3;
 const nearest = (x: number) => Math.max(0, Math.min(2, Math.floor(x * 3)));
 
@@ -82,20 +83,32 @@ export const kanbanGame = (): GameClient => {
       if (c.y >= 1 && v.phase !== 'count') land(v, i, c);
       c.el.classList.toggle('held', drag?.i === i);
       c.el.style.left = `${c.x * 100}%`;
-      c.el.style.top = `${Math.min(1, c.y) * LINE * H}px`;
+      // From fully on the board at the top to its bottom edge on the line.
+      c.el.style.top = `${Math.min(1, c.y) * (LINE * H - c.el.offsetHeight)}px`;
     });
   }
 
+  // The falling ticket under a touch, or failing that the nearest one within reach.
+  function grab(x: number, y: number): [number, Card] | null {
+    let best: [number, Card] | null = null, bestD = REACH;
+    for (const [i, c] of cards) {
+      if (c.landedAt) continue;
+      const r = c.el.getBoundingClientRect();
+      const d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+      if (d <= bestD) { best = [i, c]; bestD = d; }
+    }
+    return best;
+  }
   const frac = (e: PointerEvent) => { const r = board.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
 
   function onDown(e: PointerEvent) {
     const v = gv();
     if (!v || !playing()) return;
-    const el = (e.target as HTMLElement).closest<HTMLElement>('.kb-card'), p = frac(e);
-    const c = el && cards.get(Number(el.dataset.i));
-    if (c && !c.landedAt) {
+    const p = frac(e), near = grab(e.clientX, e.clientY);
+    if (near) {
+      const [i, c] = near;
       e.preventDefault();
-      drag = { i: Number(el!.dataset.i), pid: e.pointerId, dx: p.x - c.x, dy: p.y - c.y * LINE };
+      drag = { i, pid: e.pointerId, dx: p.x - c.x, dy: p.y - c.y * LINE };
       board.setPointerCapture(e.pointerId);
       return;
     }
