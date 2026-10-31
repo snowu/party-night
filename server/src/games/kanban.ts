@@ -53,13 +53,13 @@ export class KanbanRush implements ServerGame {
     // Tickets come quicker and fall faster as the round goes on; every one lands before the whistle.
     const bags = TICKETS.map(t => shuffle(rng, t));
     for (let at = 600; ; ) {
-      const k = at / KANBAN.playMs, fall = 5200 - 2600 * k;
+      const k = at / KANBAN.playMs, fall = 7000 - 3500 * k;
       if (at + fall > KANBAN.playMs - 300) break;
       const cat = Math.floor(rng() * 3), text = bags[cat].pop() ?? pick(rng, TICKETS[cat]);
       // Usually it starts in a wrong column; now and then you get a freebie.
       const col = rng() < 0.2 ? cat : (cat + 1 + Math.floor(rng() * 2)) % 3;
       this.deck.push({ text, cat, col, at: Math.round(at), fall: Math.round(fall) });
-      at += 1900 - 1150 * k;
+      at += 2800 - 1300 * k;
     }
     for (const p of ctx.players) {
       this.scores.set(p.id, { id: p.id, score: 0, right: 0, wrong: 0, streak: 0 });

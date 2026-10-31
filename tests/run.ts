@@ -82,9 +82,9 @@ check('course length is sane', Math.abs(courseLength(30) - 30 * 60 * 4.3) < 30 *
   const players = [{ id: 'h', name: 'h', bot: false, performer: false }, { id: 'a', name: 'a', bot: true, performer: false }];
   const ctx: any = { rng: mulberry32(11), players, connected: () => true, changed() {}, event() {}, send() {}, toAll() {} };
   const g = new KanbanRush(ctx, t);
-  check('kanban: every ticket lands before the whistle', g.deck.length >= 20 && g.deck.every(d => d.at + d.fall < KANBAN.playMs), `${g.deck.length} tickets`);
-  while (t < g.startAt + 5000) { t += 250; g.onTick(t); }
+  check('kanban: every ticket lands before the whistle', g.deck.length >= 15 && g.deck.every(d => d.at + d.fall < KANBAN.playMs), `${g.deck.length} tickets`);
   const [d0, d1, d2] = g.deck;
+  while (t < g.startAt + d2.at) { t += 250; g.onTick(t); }
   g.onMessage('h', { k: 'sort', i: 0, col: d0.cat }, t);
   g.onMessage('h', { k: 'sort', i: 1, col: d1.cat }, t);
   g.onMessage('h', { k: 'sort', i: 1, col: d1.cat }, t);
