@@ -9,6 +9,7 @@ import { canPlay } from '../social/wrap.ts';
 const LINE = 0.8;                // the line, as a share of the board's height
 const SHOW_MS = 600;             // a landed ticket shows ✓ or ✗ this long
 const REACH = 40;                // a touch this close to a ticket (px) grabs it: fingers are fat
+const FLICK = 1;                 // let go moving down faster than this (boards a second) and it drops now
 const center = (col: number) => (col + 0.5) / 3;
 const nearest = (x: number) => Math.max(0, Math.min(2, Math.floor(x * 3)));
 
@@ -19,7 +20,7 @@ export const kanbanGame = (): GameClient => {
   let raf = 0, startAt = -1;
   const cards = new Map<number, Card>();
   const landed = new Map<number, number>();   // my landings: ticket → column
-  let drag: { i: number; pid: number; dx: number; dy: number } | null = null;
+  let drag: { i: number; pid: number; dx: number; dy: number; y: number; t: number; vy: number } | null = null;
   const last: Record<string, string> = {};
   const gv = () => app.s.gv as KanbanView | null;
 
@@ -108,7 +109,7 @@ export const kanbanGame = (): GameClient => {
     if (near) {
       const [i, c] = near;
       e.preventDefault();
-      drag = { i, pid: e.pointerId, dx: p.x - c.x, dy: p.y - c.y * LINE };
+      drag = { i, pid: e.pointerId, dx: p.x - c.x, dy: p.y - c.y * LINE, y: p.y, t: e.timeStamp, vy: 0 };
       board.setPointerCapture(e.pointerId);
       return;
     }
@@ -122,11 +123,14 @@ export const kanbanGame = (): GameClient => {
     const p = frac(e);
     c.x = Math.max(center(0), Math.min(center(2), p.x - drag!.dx));
     c.minY = Math.max(c.minY, (p.y - drag!.dy) / LINE);   // pull it down to file it sooner
+    const dt = (e.timeStamp - drag!.t) / 1000;
+    if (dt > 0) { drag!.vy = drag!.vy * 0.3 + ((p.y - drag!.y) / dt) * 0.7; drag!.y = p.y; drag!.t = e.timeStamp; }
   }
   function onUp(e: PointerEvent) {
     const c = drag && e.pointerId === drag.pid ? cards.get(drag.i) : null;
+    const flick = !!drag && drag.vy > FLICK;
     drag = null;
-    if (c && !c.landedAt) { c.col = nearest(c.x); c.x = center(c.col); }
+    if (c && !c.landedAt) { c.col = nearest(c.x); c.x = center(c.col); if (flick) c.minY = 1; }   // flicked down: hard drop
   }
   // Laptops: ←/→ move the lowest ticket, ↓ or Space files it now.
   function onKey(e: KeyboardEvent) {
@@ -167,7 +171,7 @@ export const kanbanGame = (): GameClient => {
       set('.kb-me', play ? `<div class="kb-tally"><b>${fmt(score)}</b>${streak > 1 ? `<span class="kb-streak">🔥 ${streak} in a row</span>` : ''}</div>` : '');
       const rows = [...v.scores].sort((x, y) => y.score - x.score);
       set('.kb-scores', `<div class="gains">${rows.map(s => chip(app.player(s.id), `<em>${fmt(s.score)}</em>${s.streak > 2 ? `<span class="muted">🔥${s.streak}</span>` : ''}`)).join('')}</div>`);
-      set('.kb-foot', play ? `<p class="center muted">Drag each ticket into the right column before it hits the line. ${esc(KANBAN.cols.join(' · '))}. Tap a column or use ← → to move the lowest one.</p>` : '');
+      set('.kb-foot', play ? `<p class="center muted">Drag each ticket into the right column before it hits the line. ${esc(KANBAN.cols.join(' · '))}. Flick one down (or press ↓) to file it now. Tap a column or use ← → to move the lowest one.</p>` : '');
     },
     unmount() {
       cancelAnimationFrame(raf);
