@@ -13,6 +13,8 @@ import { incidentGame } from './games/social/incident.ts';
 import { SATIRE } from './games/social/satire.ts';
 import { hockeyGame } from './games/perks/hockey.ts';
 import { poolGame } from './games/perks/pool.ts';
+import { typingGame } from './games/perks/typing.ts';
+import { kanbanGame } from './games/perks/kanban.ts';
 import { photoFinish } from './shell/photo.ts';
 
 const GAMES: Record<string, () => GameClient> = {
@@ -25,6 +27,8 @@ const GAMES: Record<string, () => GameClient> = {
   incident: incidentGame,
   hockey: hockeyGame,
   pool: poolGame,
+  typing: typingGame,
+  kanban: kanbanGame,
 };
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;

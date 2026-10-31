@@ -11,6 +11,8 @@ import { OnCall } from './oncall.ts';
 import { Planning } from './planning.ts';
 import { Hockey } from './hockey.ts';
 import { TrickShot } from './pool.ts';
+import { KanbanRush } from './kanban.ts';
+import { TypingRace } from './typing.ts';
 import { Quiz } from './quiz.ts';
 import { PerfReview } from './review.ts';
 import { RootCause } from './rootcause.ts';
@@ -43,4 +45,6 @@ export const FACTORIES: Record<string, GameFactory> = {
   oncall: (ctx, now) => new OnCall(ctx, now),
   hockey: (ctx, now) => new Hockey(ctx, now),
   pool: staged(TrickShot),
+  typing: (ctx, now) => new TypingRace(ctx, now),
+  kanban: (ctx, now) => new KanbanRush(ctx, now),
 };

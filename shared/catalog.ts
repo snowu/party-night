@@ -45,6 +45,10 @@ export const CATALOG: CatalogEntry[] = [
     how: 'Your goal is at the bottom: move your mallet with your finger or mouse (or the arrow keys). First to 3 wins the match. Knocked out? Watch the rest.' },
   { id: 'pool', kind: 'social', minPlayers: 1, title: 'Trick Shot', blurb: 'The break room pool table. Same layout for everyone, one shot each.',
     how: 'Drag back from anywhere and let go to shoot, like a slingshot. Each ball potted scores; sinking the white costs.' },
+  { id: 'typing', kind: 'social', minPlayers: 1, title: 'Typing Race', blurb: 'Everyone types the same two sentences. Every right letter moves you along. First to the end wins.',
+    how: 'Type what you see. A wrong key doesn\'t move you; capitals don\'t matter. On a phone, tap the box first.' },
+  { id: 'kanban', kind: 'social', minPlayers: 1, title: 'Kanban Rush', blurb: 'Tickets rain down the board. Drag each into Bug, Feature or Not our problem before it hits the line.',
+    how: 'Drag a ticket sideways (or tap a column, or use ← →). Right answers in a row score more; wrong ones cost.' },
 ];
 
 export const gameById = (id: string) => CATALOG.find(g => g.id === id);

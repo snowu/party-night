@@ -11,6 +11,9 @@ import { CATALOG } from '../shared/catalog.ts';
 import { simulate, rack, shoot, step as poolStep } from '../shared/pool.ts';
 import { TrickShot } from '../server/src/games/pool.ts';
 import { Hockey } from '../server/src/games/hockey.ts';
+import { TypingRace } from '../server/src/games/typing.ts';
+import { KanbanRush } from '../server/src/games/kanban.ts';
+import { KANBAN } from '../shared/kanban.ts';
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -55,6 +58,41 @@ check('course length is sane', Math.abs(courseLength(30) - 30 * 60 * 4.3) < 30 *
   const all = simulate(layouts[0], shots[0]);
   check('trick shot steps the same frame by frame', t.pots === all.pots && t.steps === all.steps && t.scratch === all.scratch);
   check('trick shot opens on the classic table', layouts[0].name === 'Break Room Classic' && new Set(layouts.map(L => L.name)).size === 3);
+}
+
+// Typing Race: bots finish and place ahead of a human who stopped; no pastes.
+{
+  let t = 0;
+  const players = [{ id: 'h', name: 'h', bot: false, performer: false }, ...['a', 'b'].map(id => ({ id, name: id, bot: true, performer: false }))];
+  const ctx: any = { rng: mulberry32(9), players, connected: () => true, changed() {}, event() {}, send() {}, toAll() {} };
+  const g = new TypingRace(ctx, t);
+  while (t < g.startAt + 100) { t += 100; g.onTick(t); }
+  g.onMessage('h', { k: 'pos', n: g.text.length, e: 0 }, t);
+  const h = g.racers.find(r => r.id === 'h')!;
+  check('typing: a paste is capped at typing speed', h.n > 0 && h.n < 10 && h.ms === null, `n ${h.n}`);
+  while (!g.result && t < 200_000) { t += 100; g.onTick(t); }
+  const r = g.result!;
+  check('typing: the race ends with everyone ranked', !!r && r.ranking.length === 3, r?.headline);
+  check('typing: finishers beat a human who stopped', r.ranking.find(x => x.id === 'h')!.place === 3 && !!r.ranking[0].stat?.includes('wpm'), r.ranking.map(x => `${x.id}:${x.place}:${x.stat}`).join(' '));
+}
+
+// Kanban Rush: streaks score more, wrong costs, a ticket only lands once.
+{
+  let t = 0;
+  const players = [{ id: 'h', name: 'h', bot: false, performer: false }, { id: 'a', name: 'a', bot: true, performer: false }];
+  const ctx: any = { rng: mulberry32(11), players, connected: () => true, changed() {}, event() {}, send() {}, toAll() {} };
+  const g = new KanbanRush(ctx, t);
+  check('kanban: every ticket lands before the whistle', g.deck.length >= 20 && g.deck.every(d => d.at + d.fall < KANBAN.playMs), `${g.deck.length} tickets`);
+  while (t < g.startAt + 5000) { t += 250; g.onTick(t); }
+  const [d0, d1, d2] = g.deck;
+  g.onMessage('h', { k: 'sort', i: 0, col: d0.cat }, t);
+  g.onMessage('h', { k: 'sort', i: 1, col: d1.cat }, t);
+  g.onMessage('h', { k: 'sort', i: 1, col: d1.cat }, t);
+  g.onMessage('h', { k: 'sort', i: 2, col: (d2.cat + 1) % 3 }, t);
+  const s = g.scores.get('h')!;
+  check('kanban: right, right (streak), repeat ignored, wrong', s.score === 100 + 110 - 50 && s.right === 2 && s.wrong === 1 && s.streak === 0, JSON.stringify(s));
+  while (!g.result && t < 200_000) { t += 250; g.onTick(t); }
+  check('kanban: the bot files tickets and the round ends', !!g.result && g.scores.get('a')!.right > 5 && g.result.ranking.length === 2, g.result?.headline);
 }
 
 // Air Hockey: a knockout. Five players means byes; nobody gets two.
@@ -172,6 +210,8 @@ function runNight(games: string[], rounds: number, seed: number) {
           : id === 'pool' ? { x: 3.5, y: 0.1 * v.stage } : null;
         if (ans !== null) send(bob, { t: 'g', k: 'ans', i: v.stage, v: ans });
       }
+      if (s.game.id === 'typing' && v?.phase === 'race') send(bob, { t: 'g', k: 'pos', n: (v.lanes.find((l: any) => l.id === 'bob')?.n ?? 0) + 4, e: 0 });
+      if (s.game.id === 'kanban' && v?.phase === 'play') v.deck.forEach((d: any, i: number) => { if (t >= v.startAt + d.at + 1000 && !(i in v.mine)) send(bob, { t: 'g', k: 'sort', i, col: d.cat }); });
       if (s.game.id === 'oncall' && v?.phase === 'live' && v.holder === 'bob') send(bob, { t: 'g', k: 'pass', to: 'alice' });
       if (s.game.id === 'hockey') send(bob, { t: 'g', k: 'm', x: r(), y: r() * 2 });
       if ((s.game.id === 'draw' || s.game.id === 'perform') && v?.artist !== 'bob' && r() < 0.05) send(bob, { t: 'g', k: 'guess', text: 'banana' });
@@ -186,7 +226,7 @@ for (const [label, games, rounds] of [
   ['bird night', ['race'], 4],
   ['social night', ['quiz', 'approve', 'hottake', 'who', 'mostlikely', 'draw', 'perform', 'gallery'], 8],
   ['satire night', ['rootcause', 'hivemind', 'review', 'codereview', 'incident', 'oncall', 'planning'], 8],
-  ['perks night', ['hockey', 'pool'], 4],
+  ['perks night', ['hockey', 'pool', 'typing', 'kanban'], 6],
   ['mixed night', CATALOG.map(g => g.id), 12],
 ] as const) {
   const { room, alice, tv, hof } = runNight([...games], rounds, rounds * 31);

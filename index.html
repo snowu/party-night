@@ -245,6 +245,36 @@ body.offline::after { content: "Reconnecting…"; position: fixed; top: 10px; le
 .pool-card { background: var(--panel); border-radius: 12px; padding: 6px; display: grid; gap: 6px; }
 .pool-card canvas { width: 100%; aspect-ratio: 2.14 / 1.14; border-radius: 8px; display: block; }
 .pool-cap { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.typing, .kanban { display: grid; gap: 10px; width: min(100%, 720px); margin: 0 auto; }
+.ty-track { display: grid; gap: 6px; }
+.ty-lane { --x: 0; position: relative; height: 44px; border-radius: 22px; background: var(--panel); border: 2px solid var(--line); background-image: linear-gradient(90deg, transparent calc(100% - 26px), rgba(255,255,255,.08) calc(100% - 26px)); }
+.ty-lane.me { border-color: var(--c); }
+.ty-run { position: absolute; top: 2px; left: calc(2px + var(--x) * (100% - 40px)); transition: left .15s linear; }
+.ty-run .face { width: 36px; height: 36px; }
+.ty-stat { position: absolute; right: 32px; top: 50%; transform: translateY(-50%); font-size: .8rem; font-style: normal; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; max-width: 45%; }
+.ty-stat.fin { color: var(--green); }
+.ty-text { background: var(--panel); border-radius: 14px; padding: 14px 16px; font: 600 clamp(1.05rem, 3.6vw, 1.35rem)/1.6 ui-monospace, Menlo, Consolas, monospace; word-break: break-word; user-select: none; }
+.ty-done { color: var(--green); }
+.ty-rest { color: var(--muted); }
+.ty-cur { background: var(--yellow); color: var(--bg); border-radius: 3px; }
+.ty-cur.miss { background: var(--red); color: #fff; }
+.ty-in { width: 100%; font-size: 1.2rem; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--line); background: var(--bg2); color: var(--ink); }
+.ty-in:focus { outline: none; border-color: var(--cyan); }
+.kb-board { position: relative; height: min(60vh, 620px); border-radius: 16px; overflow: hidden; display: grid; grid-template-columns: repeat(3, 1fr); background: var(--panel); touch-action: none; user-select: none; }
+.kb-board[hidden] { display: none; }
+.kb-col { border-left: 2px dashed var(--line); display: flex; align-items: flex-end; justify-content: center; padding-bottom: 10px; }
+.kb-col:first-child { border-left: 0; }
+.kb-col b { font-size: clamp(.75rem, 2.6vw, .95rem); text-align: center; }
+.kb-col:nth-child(1) { background: linear-gradient(transparent 80%, rgba(255, 77, 109, .22) 80%); }
+.kb-col:nth-child(2) { background: linear-gradient(transparent 80%, rgba(45, 226, 230, .18) 80%); }
+.kb-col:nth-child(3) { background: linear-gradient(transparent 80%, rgba(255, 210, 63, .18) 80%); }
+.kb-line { position: absolute; left: 0; right: 0; top: 80%; border-top: 3px solid var(--pink); pointer-events: none; }
+.kb-card { position: absolute; width: 30%; transform: translate(-50%, -100%); padding: 8px 10px; border-radius: 10px; background: #fff; color: #10131f; font-size: clamp(.72rem, 2.4vw, .9rem); font-weight: 600; line-height: 1.25; box-shadow: 0 4px 10px rgba(0,0,0,.35); cursor: grab; transition: left .12s ease-out; }
+.kb-card.held { cursor: grabbing; transition: none; box-shadow: 0 8px 20px rgba(0,0,0,.5); z-index: 2; }
+.kb-card.right { background: var(--green); text-align: center; font-weight: 800; }
+.kb-card.wrong { background: var(--red); color: #fff; text-align: center; font-weight: 800; }
+.kb-tally { display: flex; justify-content: center; align-items: baseline; gap: 12px; font-size: 1.6rem; }
+.kb-streak { font-size: 1rem; color: var(--orange); font-weight: 700; }
 .toggle { position: relative; }
 .toggle .why { grid-column: 2; }
 .toggle .why, p.why { color: #ffb347; font-size: .8rem; }
